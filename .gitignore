@@ -1,0 +1,34 @@
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Local runtime (ai-frame)
+ai-frame/users/
+ai-frame/logs/
+
+# Repo root (e.g. start.sh / ollama logs)
+logs/
+
+# Secrets / env
+.env
+.env.local
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Local scratch
+/todo

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ai-frame</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div class="login-screen" id="login-screen">
+        <div class="login-container">
+            <div class="login-logo">ai-frame</div>
+            <div class="login-form" id="login-form">
+                <input type="text" id="login-username" placeholder="Username" autocomplete="username">
+                <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+                <button id="login-btn" class="btn-primary">Log In</button>
+                <div class="login-divider">or</div>
+                <button id="show-register-btn" class="btn-secondary">Create Account</button>
+            </div>
+            <div class="register-form" id="register-form" style="display: none;">
+                <input type="text" id="register-username" placeholder="Username" autocomplete="username">
+                <input type="text" id="register-display-name" placeholder="Display Name">
+                <input type="password" id="register-password" placeholder="Password" autocomplete="new-password">
+                <input type="password" id="register-password-confirm" placeholder="Confirm Password" autocomplete="new-password">
+                <button id="register-btn" class="btn-primary">Create Account</button>
+                <button id="show-login-btn" class="btn-secondary">Back to Login</button>
+            </div>
+            <div class="login-error" id="login-error"></div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div class="app" id="app" style="display: none;">
+        <!-- Notification Banner -->
+        <div class="notification-banner" id="notification-banner">
+            <div class="banner-content">
+                <span id="notification-message"></span>
+                <span id="notification-count" class="notification-count"></span>
+            </div>
+            <div class="banner-actions">
+                <button id="notification-dismiss-all" class="banner-dismiss-all" style="display: none;">Dismiss All</button>
+                <button id="notification-dismiss" class="banner-dismiss">✕</button>
+            </div>
+        </div>
+
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1 class="logo">ai-frame</h1>
+                <button id="dictate-10s-btn" class="btn-secondary btn-dictate" type="button" title="Record 10s from mic, then type cleaned text at the focused field in any app (macOS; grant Accessibility to Python)">Dictate 10s</button>
+                <button id="new-chat-btn" class="btn-icon" title="New Chat">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="header-center">
+                <select id="model-select" class="model-select">
+                    <option value="">Loading models...</option>
+                </select>
+            </div>
+            <div class="header-right">
+                <div class="user-menu" id="user-menu">
+                    <button id="user-btn" class="btn-user">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/>
+                            <path d="M4 20c0-4 4-6 8-6s8 2 8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                        <span id="user-display-name">User</span>
+                    </button>
+                    <div class="user-dropdown" id="user-dropdown">
+                        <button id="logout-btn">Log Out</button>
+                    </div>
+                </div>
+                <button id="settings-btn" class="btn-icon" title="Settings">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+                        <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="chat-container">
+                <div class="messages" id="messages">
+                    <!-- Messages will be added here -->
+                </div>
+                <div class="chat-input-container">
+                    <textarea id="chat-input" class="chat-input" placeholder="Type your message..." rows="1"></textarea>
+                    <button id="send-btn" class="btn-send">Send</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Settings Modal (VS Code style) -->
+    <div class="settings-overlay" id="settings-overlay"></div>
+    <div class="settings-modal" id="settings-modal">
+        <div class="settings-modal-header">
+            <h2>Settings</h2>
+            <button id="settings-close" class="btn-icon" title="Close">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+            </button>
+        </div>
+        <div class="settings-modal-body">
+            <!-- Tab Sidebar -->
+            <nav class="settings-tabs">
+                <button class="settings-tab active" data-tab="preferences">
+                    <span class="tab-icon">👤</span>
+                    <span class="tab-label">Preferences</span>
+                </button>
+                <button class="settings-tab" data-tab="models">
+                    <span class="tab-icon">🤖</span>
+                    <span class="tab-label">Models</span>
+                </button>
+                <button class="settings-tab" data-tab="dictation">
+                    <span class="tab-icon">🎙</span>
+                    <span class="tab-label">Dictation</span>
+                </button>
+                <button class="settings-tab" data-tab="vocabulary">
+                    <span class="tab-icon">📖</span>
+                    <span class="tab-label">Vocabulary</span>
+                </button>
+                <button class="settings-tab" data-tab="debug">
+                    <span class="tab-icon">🔧</span>
+                    <span class="tab-label">Debug</span>
+                </button>
+            </nav>
+            
+            <!-- Content Area -->
+            <div class="settings-content">
+                <!-- Preferences Panel -->
+                <div class="settings-page active" id="settings-preferences">
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">Appearance</h3>
+                        <div class="setting-row">
+                            <label for="theme-select">Theme</label>
+                            <select id="theme-select">
+                                <option value="dark">Dark</option>
+                                <option value="light">Light</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Models Panel -->
+                <div class="settings-page" id="settings-models">
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">Default Model</h3>
+                        <div class="setting-row">
+                            <label>Model</label>
+                            <select id="default-model-select" class="model-select-full">
+                                <option value="">Loading models...</option>
+                            </select>
+                            <p id="models-discovery-errors" class="models-discovery-errors" hidden></p>
+                        </div>
+                        <p class="setting-hint">Used for chat and for dictation cleanup (LLM pass).</p>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">Speech Recognition</h3>
+                        <div class="setting-row">
+                            <label>Model</label>
+                            <select id="speech-model-select" class="model-select-full">
+                                <option value="">Loading speech models...</option>
+                            </select>
+                            <p id="speech-models-errors" class="models-discovery-errors" hidden></p>
+                        </div>
+                        <p class="setting-hint">Local Whisper sizes plus remote STT models when your voice config uses an OpenAI-compatible transcription API.</p>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">Local (LM Studio)</h3>
+                        <div class="setting-row">
+                            <label>URL</label>
+                            <div class="setting-url-with-default">
+                                <input type="text" id="lm-studio-url" value="http://localhost:1234">
+                                <button type="button" class="btn-secondary btn-small" id="lm-studio-url-default" title="Reset to default local URL">Default</button>
+                            </div>
+                        </div>
+                        <div class="setting-row">
+                            <label>Test</label>
+                            <button class="btn-secondary btn-small" id="lm-studio-test">Test Connection</button>
+                        </div>
+                        <div class="setting-row">
+                            <label>Status</label>
+                            <span id="lm-studio-status" class="status-indicator">Checking...</span>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">Local (Ollama)</h3>
+                        <div class="setting-row">
+                            <label>URL</label>
+                            <div class="setting-url-with-default">
+                                <input type="text" id="ollama-url" value="http://localhost:11434">
+                                <button type="button" class="btn-secondary btn-small" id="ollama-url-default" title="Reset to default local URL">Default</button>
+                            </div>
+                        </div>
+                        <div class="setting-row">
+                            <label>Test</label>
+                            <button class="btn-secondary btn-small" id="ollama-test">Test Connection</button>
+                        </div>
+                        <div class="setting-row">
+                            <label>Status</label>
+                            <span id="ollama-status" class="status-indicator">Checking...</span>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">API Providers</h3>
+                        <div id="providers-list" class="providers-list">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Dictation Panel -->
+                <div class="settings-page" id="settings-dictation">
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">LLM rewrite before typing</h3>
+                        <p class="setting-hint">After speech-to-text, a pass with your <strong>Default model</strong> (Models tab) rewrites the transcript before it is typed into the focused field. This tab controls that pass only.</p>
+                        <div class="setting-row setting-row-checkbox">
+                            <label class="setting-checkbox-label">
+                                <input type="checkbox" id="dictation-llm-cleanup-enabled" checked>
+                                <span>Run dictation through LLM before typing</span>
+                            </label>
+                        </div>
+                        <p class="setting-hint">Turn off to insert raw speech-to-text only (no default chat model required).</p>
+                    </div>
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">Your instructions</h3>
+                        <p class="setting-hint">Optional. The model already aims for clear intent, not literal speech. Add tone, audience, formatting limits, or vocabulary preferences below. Leave empty for the default behavior only.</p>
+                        <textarea id="dictation-instructions" class="dictation-instructions-textarea" rows="10" placeholder="e.g. Write in first person. Keep paragraphs short. Use American spelling."></textarea>
+                        <p id="dictation-instructions-saved" class="dictation-instructions-saved" hidden>Saved.</p>
+                    </div>
+                </div>
+                
+                <!-- Vocabulary Panel -->
+                <div class="settings-page" id="settings-vocabulary">
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">Preferred terms</h3>
+                        <p class="setting-hint">One entry per line: product names, people, acronyms, internal codenames. The <strong>dictation LLM</strong> (when enabled) uses this list to fix spelling and choose the right form when the transcript is ambiguous. Local <strong>faster-whisper</strong> also receives a short hint (weak bias only).</p>
+                        <p class="setting-hint">For reliable names and jargon, the LLM pass is the main lever; speech models cannot guarantee a custom lexicon the way a dedicated keyword spotter would.</p>
+                        <textarea id="dictation-vocabulary" class="dictation-instructions-textarea" rows="12" placeholder="One per line, e.g. Zapier / Okta SSO / Q3 OKRs"></textarea>
+                        <p id="dictation-vocabulary-saved" class="dictation-instructions-saved" hidden>Saved.</p>
+                    </div>
+                </div>
+                
+                <!-- Debug Panel -->
+                <div class="settings-page" id="settings-debug">
+                    <div class="settings-section">
+                        <div class="debug-flags-header">
+                            <h3 class="settings-section-title">Debug Flags</h3>
+                            <div class="debug-flags-actions">
+                                <button class="btn-small" id="debug-flags-all-on">All On</button>
+                                <button class="btn-small" id="debug-flags-all-off">All Off</button>
+                            </div>
+                        </div>
+                        <span id="debug-flags-count" class="debug-flags-count"></span>
+                        <div id="debug-flags-list" class="debug-flags-list">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

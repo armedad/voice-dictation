@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "transcription": {
+    "provider": "faster_whisper",
+    "baseURL": "",
+    "model": "base",
+    "apiKeyKeychainAccount": null
+  },
+  "cleanup": {
+    "provider": "ollama_chat",
+    "baseURL": "http://127.0.0.1:11434",
+    "model": "llama3.2",
+    "apiKeyKeychainAccount": null,
+    "systemPromptRef": "bundled:cleanup_default"
+  }
+}
