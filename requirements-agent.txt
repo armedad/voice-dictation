@@ -1,0 +1,8 @@
+# Dictation agent (core + platform); use with: pip install -r requirements-agent.txt
+httpx>=0.27.0
+pydantic>=2.6.0
+numpy>=1.26.0
+sounddevice>=0.5.1
+pynput>=1.7.7
+# Local speech-to-text (default transcription provider); first run downloads weights
+faster-whisper>=1.0.0
