@@ -58,6 +58,10 @@
                     </svg>
                 </button>
             </div>
+            <nav class="header-app-nav" aria-label="Main views">
+                <button type="button" id="nav-chat-tab" class="header-app-tab active">Chat</button>
+                <button type="button" id="nav-context-tab" class="header-app-tab">Context</button>
+            </nav>
             <div class="header-center">
                 <select id="model-select" class="model-select">
                     <option value="">Loading models...</option>
@@ -87,13 +91,41 @@
 
         <!-- Main Content -->
         <main class="main-content">
-            <div class="chat-container">
-                <div class="messages" id="messages">
-                    <!-- Messages will be added here -->
+            <div id="view-chat" class="main-view">
+                <div class="chat-container">
+                    <div class="messages" id="messages">
+                        <!-- Messages will be added here -->
+                    </div>
+                    <div class="chat-input-container">
+                        <textarea id="chat-input" class="chat-input" placeholder="Type your message..." rows="1"></textarea>
+                        <button id="send-btn" class="btn-send">Send</button>
+                    </div>
                 </div>
-                <div class="chat-input-container">
-                    <textarea id="chat-input" class="chat-input" placeholder="Type your message..." rows="1"></textarea>
-                    <button id="send-btn" class="btn-send">Send</button>
+            </div>
+            <div id="view-context" class="main-view context-panel" style="display: none;">
+                <div class="context-section">
+                    <h2 class="context-section-title">Dictation cleanup — base system prompt</h2>
+                    <p class="setting-hint">Replaces only the <strong>base</strong> segment. Vocabulary and Dictation instructions are always merged after this (see Settings).</p>
+                    <div class="setting-row setting-row-checkbox">
+                        <label class="setting-checkbox-label">
+                            <input type="checkbox" id="dictation-use-default-prompt" checked>
+                            <span>Use built-in default base prompt</span>
+                        </label>
+                    </div>
+                    <textarea id="dictation-context-base-prompt" class="dictation-instructions-textarea context-base-textarea" rows="8" placeholder="Custom base prompt when default is off"></textarea>
+                    <p id="dictation-context-base-saved" class="dictation-instructions-saved" hidden>Saved.</p>
+                </div>
+                <div class="context-section">
+                    <h2 class="context-section-title">Last dictation — request sent to cleanup LLM</h2>
+                    <p class="setting-hint">Read-only. Updates after each successful Dictate 10s run.</p>
+                    <textarea id="dictation-last-request" class="dictation-instructions-textarea context-readonly" rows="12" readonly></textarea>
+                </div>
+                <div class="context-section">
+                    <h2 class="context-section-title">Last dictation — LLM response (typed into focus)</h2>
+                    <div class="context-results-row">
+                        <textarea id="dictation-last-response" class="dictation-instructions-textarea context-readonly context-results-text" rows="8" readonly></textarea>
+                        <button type="button" id="dictation-last-response-copy" class="btn-secondary">Copy</button>
+                    </div>
                 </div>
             </div>
         </main>
@@ -147,6 +179,49 @@
                                 <option value="dark">Dark</option>
                                 <option value="light">Light</option>
                             </select>
+                        </div>
+                    </div>
+                    <div class="settings-section dictation-hotkeys-section">
+                        <h3 class="settings-section-title">Global dictation hotkeys</h3>
+                        <p class="setting-hint">
+                            macOS: global hotkeys only work while <code>run_hotkey_agent.py</code> is running — start the stack with
+                            <code>./start.sh</code> (not <code>uvicorn</code> alone). The sidecar registers your chords with the system via Carbon
+                            <code>RegisterEventHotKey</code> (not a global key tap), so <strong>Input Monitoring</strong> is usually not required for hotkeys.
+                            Accessibility may still be needed for <em>typing</em> the transcript into other apps (handled by the server process).
+                            Saving a hotkey here records which account the agent should use; override with env
+                            <code>VOICE_DICTATION_AI_FRAME_USER</code> if needed. If a chord never fires, check <code>logs/hotkey-agent.log</code> for
+                            <code>RegisterEventHotKey</code> errors or conflicts with another app using the same shortcut exclusively.
+                        </p>
+                        <p id="dictation-hotkey-sidecar-status" class="setting-hint dictation-hotkey-sidecar-status" role="status" hidden></p>
+                        <details class="setting-hint dictation-hotkey-sidecar-why">
+                            <summary>Why a separate hotkey process?</summary>
+                            <p>
+                                The sidecar registers only your chosen shortcuts with the OS (Carbon), runs a small CFRunLoop thread, and
+                                survives independently of the web server. That avoids coupling to uvicorn worker/reload behaviour and keeps
+                                logging (<code>logs/hotkey-agent.log</code>) obvious. The sidecar only talks to this app over loopback HTTP.
+                            </p>
+                        </details>
+                        <p id="dictation-hotkey-capture-status" class="setting-hint dictation-hotkey-capture-status" hidden></p>
+                        <input
+                            type="text"
+                            id="dictation-hotkey-capture-sink"
+                            autocomplete="off"
+                            readonly
+                            tabindex="-1"
+                            aria-label="Hotkey capture"
+                            class="dictation-hotkey-capture-sink"
+                        />
+                        <div class="setting-row dictation-hotkey-row">
+                            <label>Toggle dictation</label>
+                            <span id="dictation-hotkey-toggle-display" class="dictation-hotkey-label">(none)</span>
+                            <button type="button" class="btn-small" id="dictation-hotkey-toggle-select">Select</button>
+                            <button type="button" class="btn-small" id="dictation-hotkey-toggle-clear">Clear</button>
+                        </div>
+                        <div class="setting-row dictation-hotkey-row">
+                            <label>Cancel recording</label>
+                            <span id="dictation-hotkey-cancel-display" class="dictation-hotkey-label">(none)</span>
+                            <button type="button" class="btn-small" id="dictation-hotkey-cancel-select">Select</button>
+                            <button type="button" class="btn-small" id="dictation-hotkey-cancel-clear">Clear</button>
                         </div>
                     </div>
                 </div>

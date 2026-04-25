@@ -2,34 +2,164 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import secrets
 import sys
+import threading
+import time
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
 from app.routers.models import get_user_store
+from app.services import users
 from app.services.dictation_cleanup import (
     build_cleanup_endpoint,
     resolve_transcription_endpoint,
 )
+from app.services.storage import UserDataStore
 
 router = APIRouter(tags=["dictation"])
 
 RECORD_SECONDS = 10.0
 
+# Repo root (parent of ai-frame/): same layout as app.main.VOICE_DICTATION_ROOT
+_VOICE_DICTATION_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+_HOTKEY_AGENT_HEARTBEAT = _VOICE_DICTATION_ROOT / "logs" / "hotkey_agent_heartbeat.json"
+# Fallback when loopback ping to the sidecar fails (older agent or bind error).
+_HEARTBEAT_MAX_AGE_SEC = 120.0
+_DEFAULT_HOTKEY_PING_PORT = 18447
 
-@router.post("/dictation/record-and-type")
-async def record_and_type(request: Request) -> dict[str, Any]:
-    """
-    Requires login cookie. Records fixed duration from default mic, runs voice pipeline,
-    then types the result at the current keyboard focus (any app). macOS only.
 
-    LLM rewrite (optional): Settings → Dictation. Uses Default model from Models tab when
-    enabled. STT model from Settings → Speech recognition (or ~/.voice-dictation when unset).
+def _hotkey_agent_ping_port() -> int:
+    raw = os.environ.get(
+        "VOICE_DICTATION_HOTKEY_PING_PORT", str(_DEFAULT_HOTKEY_PING_PORT)
+    ).strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return _DEFAULT_HOTKEY_PING_PORT
+
+
+def _probe_hotkey_agent_via_ping(session_user: str) -> tuple[str, dict[str, Any]]:
     """
+    GET http://127.0.0.1:<ping_port>/health from the sidecar.
+
+    Returns (status, details) where status is ``alive`` | ``wrong_user`` | ``unreachable``.
+    """
+    port = _hotkey_agent_ping_port()
+    url = f"http://127.0.0.1:{port}/health"
+    try:
+        r = httpx.get(url, timeout=0.35)
+        if r.status_code != 200:
+            return "unreachable", {"ping_url": url, "http_status": r.status_code}
+        data = r.json()
+    except Exception as e:
+        return "unreachable", {"ping_url": url, "error": str(e)[:200]}
+
+    if not isinstance(data, dict) or not data.get("ok"):
+        return "unreachable", {"ping_url": url, "detail": "bad_json"}
+    u = data.get("username")
+    if not isinstance(u, str) or not u.strip():
+        return "unreachable", {"ping_url": url, "detail": "no_username"}
+    u = u.strip()
+    if u != session_user:
+        return "wrong_user", {"ping_url": url, "ping_username": u}
+    return "alive", {"ping_url": url, "ping_username": u}
+
+_dictation_cancel = threading.Event()
+_dictation_session_lock = asyncio.Lock()
+
+
+def _set_dictation_cancel() -> None:
+    _dictation_cancel.set()
+
+
+def _require_loopback(request: Request) -> None:
+    client = request.client
+    host = (client.host if client else "") or ""
+    if host not in ("127.0.0.1", "::1"):
+        raise HTTPException(
+            status_code=403,
+            detail="Hotkey endpoints accept connections from loopback only.",
+        )
+
+
+def _dictation_server_log(message: str, data: dict[str, Any] | None = None) -> None:
+    """Append to daily ai-frame log (same sink as client debug logs)."""
+    try:
+        from app.routers.client_log import write_to_log_file
+
+        write_to_log_file("INFO", message, data)
+    except Exception:
+        pass
+
+
+def _store_for_username(username: str) -> UserDataStore:
+    u = (username or "").strip()
+    if not u or users.get_user(u) is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return UserDataStore(users.get_user_data_dir(u), u)
+
+
+class HotkeyUserBody(BaseModel):
+    username: str = Field(..., min_length=1)
+
+
+def _format_verbatim_llm_request(system_prompt_full: str, user_message: str) -> str:
+    """Single readonly bundle: system + user roles as sent to the cleanup LLM."""
+    blocks = [
+        "=== system (full message sent to cleanup LLM) ===\n" + (system_prompt_full or ""),
+        "=== user (raw transcript after speech recognition) ===\n" + (user_message or ""),
+    ]
+    return "\n\n".join(blocks)
+
+
+@router.get("/dictation/prompt-defaults")
+async def dictation_prompt_defaults(request: Request) -> dict[str, str]:
+    """Built-in dictation cleanup base prompt (for Context tab when using default)."""
     if not request.cookies.get("aiframe_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
+    from core.models import DEFAULT_CLEANUP_SYSTEM_PROMPT
 
+    return {"default_cleanup_base_prompt": DEFAULT_CLEANUP_SYSTEM_PROMPT.strip()}
+
+
+@router.get("/dictation/last-context")
+async def dictation_last_context(request: Request) -> dict[str, Any]:
+    """Last dictation LLM snapshot and verbatim bundle for the Context tab."""
+    if not request.cookies.get("aiframe_session"):
+        raise HTTPException(status_code=401, detail="Not logged in")
+    store = get_user_store(request)
+    snap = store.load_dictation_last_llm_snapshot()
+    if not snap:
+        return {
+            "snapshot": {},
+            "verbatim_request": "",
+            "response_text_full": "",
+        }
+    sys_full = snap.get("system_prompt_full") or ""
+    user_msg = snap.get("user_message") or ""
+    response = snap.get("response_text_full") or ""
+    return {
+        "snapshot": snap,
+        "verbatim_request": _format_verbatim_llm_request(sys_full, user_msg),
+        "response_text_full": response,
+    }
+
+
+async def _execute_dictation(
+    store: UserDataStore,
+    *,
+    cancel_event: threading.Event,
+    source: str = "dictation",
+) -> dict[str, Any]:
+    """Shared dictation pipeline: record → STT/cleanup → type. Respects ``cancel_event``."""
     if sys.platform != "darwin":
         raise HTTPException(
             status_code=501,
@@ -42,10 +172,9 @@ async def record_and_type(request: Request) -> dict[str, Any]:
         format_vocabulary_for_whisper_initial_prompt,
     )
     from core.orchestrator import run_pipeline
-    from platform_mac.audio import record_wav_bytes
+    from platform_mac.audio import record_wav_bytes_interruptible
     from platform_mac.typing_inject import TypingInjectionError, type_text_strict
 
-    store = get_user_store(request)
     settings = store.get_settings()
     llm_cleanup = settings.dictation_llm_cleanup_enabled
 
@@ -65,20 +194,39 @@ async def record_and_type(request: Request) -> dict[str, Any]:
         cleanup_system_prompt = build_dictation_cleanup_system_prompt(
             settings.dictation_instructions,
             vocabulary=settings.dictation_vocabulary,
+            use_default_base=settings.dictation_use_default_system_prompt,
+            custom_base=settings.dictation_custom_system_prompt_base,
         )
 
     stt_vocab_hint = format_vocabulary_for_whisper_initial_prompt(
         settings.dictation_vocabulary
     )
 
+    _dictation_server_log(
+        "dictation record start",
+        {"source": source, "user": store.username, "seconds": RECORD_SECONDS},
+    )
+    cancel_event.clear()
     try:
-        wav = await asyncio.to_thread(record_wav_bytes, RECORD_SECONDS)
+        wav, cancelled = await asyncio.to_thread(
+            record_wav_bytes_interruptible,
+            RECORD_SECONDS,
+            cancel_event,
+        )
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Microphone capture failed: {e!s}. Check mic permission and PortAudio.",
         ) from e
 
+    if cancelled or not wav:
+        _dictation_server_log(
+            "dictation record cancelled or empty",
+            {"source": source, "user": store.username, "cancelled": cancelled},
+        )
+        return {"ok": False, "cancelled": True, "text": ""}
+
+    capture_audit: dict[str, Any] = {}
     try:
         text = await run_pipeline(
             wav,
@@ -89,6 +237,7 @@ async def record_and_type(request: Request) -> dict[str, Any]:
             cleanup_system_prompt=cleanup_system_prompt,
             skip_llm_cleanup=not llm_cleanup,
             transcription_initial_prompt=stt_vocab_hint,
+            capture_audit=capture_audit,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -98,8 +247,34 @@ async def record_and_type(request: Request) -> dict[str, Any]:
             detail=f"Transcription or cleanup failed: {e!s}",
         ) from e
 
+    text_out = (text or "").strip()
+    if not text_out:
+        raw_tr = (capture_audit.get("raw_transcript") or "").strip()
+        _dictation_server_log(
+            "dictation skipped empty transcript",
+            {"source": source, "user": store.username, "raw_len": len(raw_tr)},
+        )
+        return {"ok": True, "cancelled": False, "text": "", "skipped_empty": True}
+
+    raw_tr = capture_audit.get("raw_transcript", "")
+    snapshot = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "system_prompt_full": cleanup_system_prompt or "",
+        "user_message": raw_tr,
+        "response_text_full": text_out,
+        "llm_cleanup_enabled": llm_cleanup,
+        "cleanup_provider": getattr(clean_ep, "provider", None) if clean_ep else None,
+        "cleanup_model": getattr(clean_ep, "model_name", None) if clean_ep else None,
+        "cleanup_base_url": (clean_ep.baseURL if clean_ep else "") or "",
+    }
+    store.save_dictation_last_llm_snapshot(snapshot)
+
+    _dictation_server_log(
+        "dictation pipeline ok before type",
+        {"source": source, "user": store.username, "text_len": len(text_out)},
+    )
     try:
-        await asyncio.to_thread(type_text_strict, text)
+        await asyncio.to_thread(type_text_strict, text_out)
     except TypingInjectionError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
     except Exception as e:
@@ -108,4 +283,171 @@ async def record_and_type(request: Request) -> dict[str, Any]:
             detail=f"Synthetic typing failed: {e!s}",
         ) from e
 
-    return {"ok": True, "text": text}
+    return {"ok": True, "cancelled": False, "text": text_out}
+
+
+@router.post("/dictation/record-and-type")
+async def record_and_type(request: Request) -> dict[str, Any]:
+    """
+    Requires login cookie. Records fixed duration from default mic, runs voice pipeline,
+    then types the result at the current keyboard focus (any app). macOS only.
+    """
+    if not request.cookies.get("aiframe_session"):
+        raise HTTPException(status_code=401, detail="Not logged in")
+
+    store = get_user_store(request)
+    async with _dictation_session_lock:
+        out = await _execute_dictation(
+            store, cancel_event=_dictation_cancel, source="record_and_type"
+        )
+    if out.get("cancelled"):
+        return {"ok": False, "cancelled": True, "text": ""}
+    if out.get("skipped_empty"):
+        return {"ok": True, "text": "", "skipped_empty": True}
+    return {"ok": True, "text": out.get("text", "")}
+
+
+@router.get("/dictation/hotkey/status")
+async def dictation_hotkey_agent_status(request: Request) -> dict[str, Any]:
+    """
+    Whether the macOS hotkey sidecar appears alive for this login.
+
+    Prefer a **loopback HTTP GET** to the sidecar ``/health`` (responds only while the
+    process runs). Falls back to ``logs/hotkey_agent_heartbeat.json`` for older agents.
+    """
+    if not request.cookies.get("aiframe_session"):
+        raise HTTPException(status_code=401, detail="Not logged in")
+
+    store = get_user_store(request)
+    session_user = store.username
+
+    if sys.platform != "darwin":
+        return {
+            "macos_dictation_hotkeys_supported": False,
+            "agent_running_for_you": None,
+            "liveness_source": None,
+            "heartbeat_username": None,
+            "heartbeat_age_sec": None,
+            "session_username": session_user,
+        }
+
+    ping_status, ping_detail = await asyncio.to_thread(
+        _probe_hotkey_agent_via_ping, session_user
+    )
+    if ping_status == "alive":
+        return {
+            "macos_dictation_hotkeys_supported": True,
+            "agent_running_for_you": True,
+            "liveness_source": "ping",
+            **ping_detail,
+            "heartbeat_username": None,
+            "heartbeat_age_sec": None,
+            "session_username": session_user,
+        }
+    if ping_status == "wrong_user":
+        return {
+            "macos_dictation_hotkeys_supported": True,
+            "agent_running_for_you": False,
+            "liveness_source": "ping",
+            **ping_detail,
+            "heartbeat_username": None,
+            "heartbeat_age_sec": None,
+            "session_username": session_user,
+        }
+
+    hb_user: str | None = None
+    age_sec: float | None = None
+    if _HOTKEY_AGENT_HEARTBEAT.exists():
+        try:
+            raw = json.loads(_HOTKEY_AGENT_HEARTBEAT.read_text(encoding="utf-8"))
+            hb_user = raw.get("username") if isinstance(raw.get("username"), str) else None
+            ts = float(raw.get("ts", 0))
+            if ts > 0:
+                age_sec = max(0.0, time.time() - ts)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            pass
+
+    alive = (
+        age_sec is not None
+        and age_sec <= _HEARTBEAT_MAX_AGE_SEC
+        and hb_user is not None
+        and session_user is not None
+        and hb_user == session_user
+    )
+
+    return {
+        "macos_dictation_hotkeys_supported": True,
+        "agent_running_for_you": alive,
+        "liveness_source": "heartbeat_file" if alive or hb_user is not None else "none",
+        **({"ping_unreachable": True, **ping_detail} if ping_status == "unreachable" else {}),
+        "heartbeat_username": hb_user,
+        "heartbeat_age_sec": round(age_sec, 1) if age_sec is not None else None,
+        "session_username": session_user,
+    }
+
+
+@router.post("/dictation/hotkey/cancel")
+async def dictation_hotkey_cancel(request: Request) -> dict[str, Any]:
+    """Signal in-process dictation recording to stop (loopback-only)."""
+    _require_loopback(request)
+    _dictation_server_log(
+        "dictation cancel requested",
+        {"client": request.client.host if request.client else None},
+    )
+    _set_dictation_cancel()
+    return {"ok": True}
+
+
+@router.post("/dictation/hotkey/toggle")
+async def dictation_hotkey_toggle(
+    request: Request,
+    body: HotkeyUserBody,
+) -> dict[str, Any]:
+    """
+    Start dictation for ``body.username`` using ``X-Voice-Dictation-Secret`` and per-user
+    ``hotkey_local_secret.txt``. Loopback-only.
+    """
+    _require_loopback(request)
+    secret_hdr = request.headers.get("x-voice-dictation-secret")
+    if not secret_hdr or not secret_hdr.strip():
+        raise HTTPException(status_code=401, detail="Missing X-Voice-Dictation-Secret header")
+
+    store = _store_for_username(body.username)
+    expected = store.read_hotkey_secret()
+    if not expected:
+        raise HTTPException(
+            status_code=403,
+            detail="Hotkey secret not configured; save a dictation hotkey in Preferences first.",
+        )
+    if not secrets.compare_digest(secret_hdr.strip(), expected.strip()):
+        raise HTTPException(status_code=403, detail="Invalid hotkey secret")
+
+    settings = store.get_settings()
+    if not settings.dictation_hotkey_toggle:
+        raise HTTPException(status_code=400, detail="No dictation toggle hotkey configured")
+
+    _dictation_server_log(
+        "dictation hotkey toggle accepted",
+        {"user": body.username, "client": request.client.host if request.client else None},
+    )
+    async with _dictation_session_lock:
+        out = await _execute_dictation(
+            store, cancel_event=_dictation_cancel, source="hotkey_toggle"
+        )
+    if out.get("cancelled"):
+        _dictation_server_log(
+            "dictation hotkey toggle finished cancelled",
+            {"user": body.username},
+        )
+        return {"ok": False, "cancelled": True, "text": ""}
+    if out.get("skipped_empty"):
+        _dictation_server_log(
+            "dictation hotkey toggle finished empty transcript",
+            {"user": body.username},
+        )
+        return {"ok": True, "text": "", "skipped_empty": True}
+    _dictation_server_log(
+        "dictation hotkey toggle finished ok",
+        {"user": body.username},
+    )
+    return {"ok": True, "text": out.get("text", "")}

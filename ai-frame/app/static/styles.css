@@ -267,6 +267,34 @@ html, body {
     gap: 12px;
 }
 
+.header-app-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.header-app-tab {
+    padding: 8px 14px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.header-app-tab:hover {
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+}
+
+.header-app-tab.active {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: var(--accent);
+}
+
 .logo {
     font-size: 1.25rem;
     font-weight: 600;
@@ -351,6 +379,58 @@ html, body {
     flex: 1;
     overflow: hidden;
     display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.main-view {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.context-panel {
+    overflow-y: auto;
+    padding: 16px 20px 24px;
+    align-items: stretch;
+}
+
+.context-section {
+    margin-bottom: 28px;
+    max-width: 960px;
+    margin-left: auto;
+    margin-right: auto;
+    width: 100%;
+}
+
+.context-section-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-primary);
+}
+
+.context-base-textarea {
+    margin-top: 8px;
+}
+
+.context-readonly {
+    opacity: 0.95;
+    cursor: default;
+}
+
+.context-results-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    margin-top: 8px;
+}
+
+.context-results-row .context-results-text {
+    flex: 1;
+    min-width: 0;
 }
 
 .chat-container {
@@ -625,6 +705,61 @@ html, body {
 .setting-row input:focus, .setting-row select:focus {
     outline: none;
     border-color: var(--accent);
+}
+
+/* Visually hidden; programmatically focused so key events reach the page reliably. */
+.dictation-hotkeys-section {
+    position: relative;
+}
+
+.dictation-hotkey-capture-sink {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+    opacity: 0;
+}
+
+.dictation-hotkey-capture-status:not([hidden]) {
+    color: var(--accent);
+    font-weight: 500;
+}
+
+.dictation-hotkey-sidecar-status:not([hidden]) {
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-top: 8px;
+}
+
+.dictation-hotkey-sidecar-status.sidecar-ok {
+    background: rgba(34, 197, 94, 0.12);
+    border: 1px solid rgba(34, 197, 94, 0.35);
+    color: var(--text-primary);
+}
+
+.dictation-hotkey-sidecar-status.sidecar-warn {
+    background: rgba(251, 191, 36, 0.12);
+    border: 1px solid rgba(251, 191, 36, 0.45);
+    color: var(--text-primary);
+}
+
+.dictation-hotkey-sidecar-why {
+    margin-top: 10px;
+    font-size: 12px;
+}
+
+.dictation-hotkey-sidecar-why[open] > summary {
+    margin-bottom: 8px;
+}
+
+.dictation-hotkey-sidecar-why p {
+    margin: 0;
+    line-height: 1.45;
 }
 
 .setting-hint {

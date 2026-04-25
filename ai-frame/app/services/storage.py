@@ -2,7 +2,8 @@
 import json
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+import secrets
+from typing import Any, Optional
 from uuid import uuid4
 from pydantic import BaseModel, Field
 
@@ -40,6 +41,11 @@ class Settings(BaseModel):
     dictation_instructions: Optional[str] = None
     # Newline-separated preferred terms (proper nouns, acronyms, product names)
     dictation_vocabulary: Optional[str] = None
+    dictation_use_default_system_prompt: bool = True
+    dictation_custom_system_prompt_base: Optional[str] = None
+    # Global dictation hotkeys (JSON chord or null); see core.hotkey_chord
+    dictation_hotkey_toggle: Optional[dict[str, Any]] = None
+    dictation_hotkey_cancel: Optional[dict[str, Any]] = None
 
 
 def normalize_url(url: str) -> str:
@@ -216,8 +222,11 @@ class UserDataStore:
         
         # Merge: user settings override defaults
         merged_data = defaults.model_dump()
+        nullable_keys = frozenset({"dictation_hotkey_toggle", "dictation_hotkey_cancel"})
         for key, value in user_data.items():
-            if value is not None:
+            if key in nullable_keys:
+                merged_data[key] = value
+            elif value is not None:
                 merged_data[key] = value
         
         settings = Settings(**merged_data)
@@ -238,16 +247,74 @@ class UserDataStore:
             json.dump(settings.model_dump(), f, indent=2, ensure_ascii=False)
     
     def update_settings(self, **kwargs) -> Settings:
-        """Update settings."""
+        """Update settings (legacy keyword API; prefer ``update_settings_patch``)."""
+        return self.update_settings_patch(dict(kwargs))
+
+    def update_settings_patch(self, patch: dict[str, Any]) -> Settings:
+        """Apply only keys present in ``patch``; allows None for nullable hotkey fields."""
         settings = self.get_settings()
-        for key, value in kwargs.items():
-            if value is not None and hasattr(settings, key):
-                # Normalize URLs
-                if key in ("ollama_url", "lm_studio_url"):
-                    value = normalize_url(value)
+        nullable_hotkeys = frozenset({"dictation_hotkey_toggle", "dictation_hotkey_cancel"})
+        for key, value in patch.items():
+            if not hasattr(settings, key):
+                continue
+            if key in nullable_hotkeys:
                 setattr(settings, key, value)
+                continue
+            if value is None:
+                continue
+            if key in ("ollama_url", "lm_studio_url"):
+                value = normalize_url(value)
+            setattr(settings, key, value)
         self.save_settings(settings)
         return settings
+
+    def hotkey_secret_path(self) -> Path:
+        return self.data_dir / "hotkey_local_secret.txt"
+
+    def read_hotkey_secret(self) -> Optional[str]:
+        """Return stored secret hex string, or None if missing."""
+        path = self.hotkey_secret_path()
+        if not path.exists():
+            return None
+        try:
+            raw = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+        return raw or None
+
+    def ensure_hotkey_secret(self) -> str:
+        """Create ``hotkey_local_secret.txt`` if missing; return current secret."""
+        self.ensure_dirs()
+        path = self.hotkey_secret_path()
+        if path.exists():
+            existing = self.read_hotkey_secret()
+            if existing:
+                return existing
+        token = secrets.token_hex(32)
+        path.write_text(token + "\n", encoding="utf-8")
+        return token
+
+    def dictation_last_llm_path(self) -> Path:
+        return self.data_dir / "dictation_last_llm.json"
+
+    def save_dictation_last_llm_snapshot(self, snapshot: dict) -> None:
+        """Persist last dictation LLM request/response for the Context tab."""
+        self.ensure_dirs()
+        with open(self.dictation_last_llm_path(), "w", encoding="utf-8") as f:
+            json.dump(snapshot, f, indent=2, ensure_ascii=False)
+
+    def load_dictation_last_llm_snapshot(self) -> dict:
+        """Load last dictation LLM snapshot, or {} if missing/unreadable."""
+        self.ensure_dirs()
+        path = self.dictation_last_llm_path()
+        if not path.exists():
+            return {}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except (json.JSONDecodeError, OSError):
+            return {}
     
     # --- Notifications ---
     

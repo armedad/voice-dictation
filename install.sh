@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Voice dictation MVP — one-shot dev install (venv, Python deps, optional model prefetch).
 #
+# Windows: use install.bat in this directory (same flags, shared scripts/install_post_pip.py).
+#
 # Usage:
 #   ./install.sh                  # full: agent + ai-frame + faster-whisper weights + ollama pull
 #   ./install.sh --agent-only     # venv + requirements-agent.txt only
@@ -34,7 +36,7 @@ for arg in "$@"; do
     --with-spike) WITH_SPIKE=true ;;
     --recreate-venv) RECREATE_VENV=true ;;
     -h|--help)
-      sed -n '1,25p' "$0"
+      sed -n '2,17p' "$0"
       exit 0
       ;;
   esac
@@ -98,6 +100,7 @@ source .venv/bin/activate
 python -m pip install -U pip wheel setuptools
 
 echo "==> Installing agent dependencies (requirements-agent.txt) ..."
+echo "    (includes PyObjC for macOS Carbon global hotkeys; mic/STT/httpx/pynput per that file)"
 python -m pip install -r requirements-agent.txt
 
 if [[ "$SKIP_AI_FRAME" != true ]]; then
@@ -116,46 +119,13 @@ export VOICE_DICTATION_WHISPER_COMPUTE="${VOICE_DICTATION_WHISPER_COMPUTE:-int8}
 
 if [[ "$SKIP_WHISPER" != true ]]; then
   echo "==> Pre-downloading faster-whisper weights (from config/example-model-settings.json) ..."
-  python <<'PY'
-import json
-import os
-from pathlib import Path
-
-root = Path(os.environ["INSTALL_ROOT"])
-cfg_path = root / "config" / "example-model-settings.json"
-cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-t = cfg.get("transcription") or {}
-prov = (t.get("provider") or "").lower().replace("-", "_")
-if prov not in ("faster_whisper", "local_faster_whisper"):
-    print("Skipping Whisper preload: transcription.provider is not faster_whisper in example config.")
-    raise SystemExit(0)
-model = t.get("model") or "base"
-device = os.environ.get("VOICE_DICTATION_WHISPER_DEVICE", "cpu")
-compute = os.environ.get("VOICE_DICTATION_WHISPER_COMPUTE", "int8")
-print(f"Loading WhisperModel({model!r}, device={device!r}, compute_type={compute!r}) ...")
-from faster_whisper import WhisperModel  # noqa: E402
-
-WhisperModel(model, device=device, compute_type=compute)
-print("Whisper weights ready.")
-PY
+  python "$ROOT/scripts/install_post_pip.py" prefetch-whisper
 fi
 
 if [[ "$SKIP_OLLAMA" != true ]] && command -v ollama >/dev/null 2>&1; then
   echo "==> Pulling Ollama cleanup model (from config/example-model-settings.json) ..."
   OLLAMA_MODEL="$(
-    python <<'PY'
-import json
-import os
-from pathlib import Path
-
-root = Path(os.environ["INSTALL_ROOT"])
-cfg = json.loads((root / "config" / "example-model-settings.json").read_text(encoding="utf-8"))
-c = cfg.get("cleanup") or {}
-prov = (c.get("provider") or "").lower().replace("-", "_")
-if prov not in ("ollama_chat", "ollama"):
-    raise SystemExit(0)
-print(c.get("model") or "llama3.2")
-PY
+    python "$ROOT/scripts/install_post_pip.py" print-ollama-cleanup-model
   )"
   if [[ -n "${OLLAMA_MODEL:-}" ]]; then
     ollama pull "$OLLAMA_MODEL" || {
@@ -174,3 +144,4 @@ echo "    Activate:  source .venv/bin/activate"
 echo "    Agent:     python run_agent.py record-once --seconds 4 --no-type"
 echo "    Settings:  ./start.sh  → http://127.0.0.1:8000/ (see banner printed by start.sh)"
 echo "    Config:    ~/.voice-dictation/config.json (created on first agent run if missing)"
+echo "    Windows:   install.bat (same flags; shared scripts/install_post_pip.py)"

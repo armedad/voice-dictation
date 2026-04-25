@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from .adapters.cleanup_ollama import cleanup_ollama_chat
 from .adapters.cleanup_openai import cleanup_openai_chat
@@ -20,6 +20,7 @@ async def run_pipeline(
     cleanup_system_prompt: Optional[str] = None,
     skip_llm_cleanup: bool = False,
     transcription_initial_prompt: Optional[str] = None,
+    capture_audit: Optional[dict[str, Any]] = None,
 ) -> str:
     """
     Transcribe WAV bytes, then optionally run LLM cleanup.
@@ -37,6 +38,8 @@ async def run_pipeline(
 
     ``transcription_initial_prompt``: optional faster-whisper ``initial_prompt`` (soft bias);
     ignored for OpenAI-compatible audio STT.
+
+    ``capture_audit``: if provided, set ``raw_transcript`` after STT (even when skipping LLM).
 
     When ``cleanup_endpoint`` is omitted, ``~/.voice-dictation/config.json`` cleanup is used.
     """
@@ -59,6 +62,12 @@ async def run_pipeline(
             f"Unknown transcription.provider: {trans.provider!r}. "
             "Use faster_whisper (local) or openai_compatible_audio."
         )
+
+    if capture_audit is not None:
+        capture_audit["raw_transcript"] = raw
+
+    if not (raw or "").strip():
+        return ""
 
     if skip_llm_cleanup:
         return raw

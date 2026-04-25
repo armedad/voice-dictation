@@ -2,12 +2,17 @@
  * ai-frame - Main Application Entry Point
  */
 
-import { debugLog, debugError, serverLog } from './debug-flags.js';
+import { debugLog, debugWarn, serverLog } from './debug-flags.js';
 import { api } from './api.js';
 import { checkAuth, login, register, logout, hasUsers } from './auth.js';
 import { loadSettings, loadModels, loadSpeechModels, initSettings } from './settings.js';
 import { initChat, createConversation } from './chat.js';
 import { initNotifications, startNotificationPolling, stopNotificationPolling } from './notifications.js';
+import {
+    initContextTab,
+    refreshDictationLastContext,
+    syncContextTabFromSettings,
+} from './context-tab.js';
 
 // Log on module load
 serverLog('info', '[APP] ai-frame loaded at ' + new Date().toISOString());
@@ -115,6 +120,7 @@ async function initializeApp() {
     await loadModels();
     await loadSpeechModels();
     await createConversation();
+    await syncContextTabFromSettings();
 }
 
 /**
@@ -171,21 +177,45 @@ function setupEventListeners() {
     const dictateBtn = document.getElementById('dictate-10s-btn');
     if (dictateBtn) {
         const defaultLabel = dictateBtn.textContent;
+        /** True while a record-and-type request is in flight (second click cancels mic capture). */
+        let dictateSessionActive = false;
         dictateBtn.addEventListener('click', async () => {
-            if (dictateBtn.disabled) return;
-            dictateBtn.disabled = true;
-            dictateBtn.textContent = 'Recording 10s + AI…';
+            if (dictateSessionActive) {
+                try {
+                    debugLog('DICTATION', 'POST /api/dictation/hotkey/cancel (stop recording)');
+                    await api('dictation/hotkey/cancel', { method: 'POST', body: {} });
+                } catch (e) {
+                    debugWarn('DICTATION', 'hotkey/cancel failed:', e?.message || e);
+                    alert(e.message || 'Could not stop dictation');
+                }
+                return;
+            }
+            dictateSessionActive = true;
+            dictateBtn.textContent = 'Recording… (click to stop)';
             try {
-                await api('dictation/record-and-type', { method: 'POST', body: {} });
-                dictateBtn.textContent = 'Done';
+                debugLog('DICTATION', 'POST /api/dictation/record-and-type starting');
+                const result = await api('dictation/record-and-type', {
+                    method: 'POST',
+                    body: {},
+                });
+                debugLog('DICTATION', 'POST /api/dictation/record-and-type finished', result);
+                if (result.cancelled) {
+                    dictateBtn.textContent = 'Cancelled';
+                } else if (result.skipped_empty) {
+                    dictateBtn.textContent = 'No speech detected';
+                } else {
+                    await refreshDictationLastContext();
+                    dictateBtn.textContent = 'Done';
+                }
                 setTimeout(() => {
                     dictateBtn.textContent = defaultLabel;
-                    dictateBtn.disabled = false;
                 }, 1500);
             } catch (e) {
+                debugWarn('DICTATION', 'record-and-type failed:', e?.message || e);
                 dictateBtn.textContent = defaultLabel;
-                dictateBtn.disabled = false;
                 alert(e.message || 'Dictation failed');
+            } finally {
+                dictateSessionActive = false;
             }
         });
     }
@@ -200,6 +230,7 @@ async function main() {
     // Setup UI
     setupEventListeners();
     initSettings();
+    initContextTab();
     initChat();
     initNotifications();
     

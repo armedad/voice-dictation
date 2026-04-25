@@ -6,11 +6,224 @@ import { api } from './api.js';
 import { debugLog, debugError, getDebugFlagDefinitions, setDebugFlag, setAllDebugFlags, DEBUG } from './debug-flags.js';
 
 let currentSettings = {};
+
+/** Latest settings object from server (read-only snapshot for other modules). */
+export function getCurrentSettings() {
+    return { ...currentSettings };
+}
 let providersCache = [];
 let modelsCache = { groups: [], default: {} };
 let speechModelsCache = { groups: [], default: {}, errors: [] };
 let dictationInstructionsDebounce = null;
 let dictationVocabularyDebounce = null;
+
+/** @type {'toggle' | 'cancel' | null} */
+let dictationHotkeyCaptureField = null;
+
+/** Abort previous window keydown listener when starting a new capture or closing settings. */
+let dictationHotkeyKeydownAbort = null;
+let dictationHotkeyStatusPoll = null;
+
+function stopDictationHotkeyCapture() {
+    dictationHotkeyKeydownAbort?.abort();
+    dictationHotkeyKeydownAbort = null;
+    dictationHotkeyCaptureField = null;
+    const st = document.getElementById('dictation-hotkey-capture-status');
+    if (st) {
+        st.hidden = true;
+        st.textContent = '';
+    }
+}
+
+/**
+ * @param {'toggle' | 'cancel'} field
+ */
+function startDictationHotkeyCapture(field) {
+    stopDictationHotkeyCapture();
+    dictationHotkeyCaptureField = field;
+
+    const st = document.getElementById('dictation-hotkey-capture-status');
+    if (st) {
+        st.style.color = '';
+        st.hidden = false;
+        st.textContent =
+            'Listening… Hold at least one modifier (⌘ / Ctrl / ⌥ / Shift) and press a letter or key. Press Esc alone to cancel. If keys never register, open this URL in Safari or Chrome (some embedded previews reserve shortcuts).';
+    }
+
+    const onKeyDown = async (e) => {
+        if (!dictationHotkeyCaptureField) return;
+
+        if (
+            e.key === 'Escape' &&
+            !e.metaKey &&
+            !e.ctrlKey &&
+            !e.altKey &&
+            !e.shiftKey
+        ) {
+            e.preventDefault();
+            e.stopPropagation();
+            stopDictationHotkeyCapture();
+            return;
+        }
+
+        const chord = eventToChord(e);
+        if (!chord) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const which = dictationHotkeyCaptureField;
+        stopDictationHotkeyCapture();
+
+        const payload =
+            which === 'toggle'
+                ? { dictation_hotkey_toggle: chord }
+                : { dictation_hotkey_cancel: chord };
+        try {
+            await saveSettings(payload);
+        } catch (err) {
+            debugError('SETTINGS', 'Hotkey save failed:', err);
+            const stEl = document.getElementById('dictation-hotkey-capture-status');
+            if (stEl) {
+                stEl.hidden = false;
+                stEl.style.color = 'var(--error, #f87171)';
+                stEl.textContent =
+                    (err && err.message) ||
+                    'Could not save hotkey. Check that you are logged in.';
+            }
+        }
+    };
+
+    const ac = new AbortController();
+    dictationHotkeyKeydownAbort = ac;
+    window.addEventListener('keydown', onKeyDown, { capture: true, signal: ac.signal });
+
+    queueMicrotask(() => {
+        const ae = document.activeElement;
+        if (ae instanceof HTMLElement && ae.id !== 'dictation-hotkey-capture-sink') {
+            ae.blur();
+        }
+        document.getElementById('dictation-hotkey-capture-sink')?.focus({ preventScroll: true });
+    });
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} chord
+ * @returns {string}
+ */
+function formatChordDisplay(chord) {
+    if (!chord || typeof chord !== 'object' || !Array.isArray(chord.modifiers)) return '(none)';
+    const isApple =
+        typeof navigator !== 'undefined' &&
+        /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+    const labels = {
+        cmd: 'Cmd',
+        ctrl: 'Ctrl',
+        alt: isApple ? 'Option (⌥)' : 'Alt',
+        shift: 'Shift',
+    };
+    const parts = chord.modifiers.map((m) => labels[m] || m);
+    const k = chord.key;
+    if (typeof k !== 'string' || !k) return '(none)';
+    if (k.length === 1) {
+        parts.push(/[a-z]/.test(k) ? k.toUpperCase() : k);
+    } else {
+        parts.push(k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
+    }
+    return parts.join('+');
+}
+
+/**
+ * Physical / layout-stable key from ``event.code`` (prefer this when Option/Alt is held,
+ * because ``event.key`` may be a dead key or a special character on macOS).
+ * @param {KeyboardEvent} e
+ * @returns {string | null}
+ */
+function logicalKeyFromCode(e) {
+    const c = e.code || '';
+    if (c.startsWith('Key') && c.length === 4) return c.slice(3).toLowerCase();
+    if (c.startsWith('Digit')) return c.slice(5);
+
+    const named = {
+        Space: 'space',
+        Minus: 'minus',
+        Equal: 'equal',
+        BracketLeft: 'bracket_left',
+        BracketRight: 'bracket_right',
+        Backslash: 'backslash',
+        Semicolon: 'semicolon',
+        Quote: 'quote',
+        Comma: 'comma',
+        Period: 'period',
+        Slash: 'slash',
+        Backquote: 'backquote',
+        IntlBackslash: 'intl_backslash',
+        Tab: 'tab',
+    };
+    if (named[c]) return named[c];
+
+    return null;
+}
+
+/**
+ * @param {string} key from event.key
+ * @returns {string | null}
+ */
+function normalizeSpecialKey(key) {
+    if (!key || key === 'Dead') return null;
+    if (key === ' ') return 'space';
+    if (key.length === 1) {
+        const k = key.toLowerCase();
+        if (/^[a-z0-9]$/.test(k)) return k;
+        return null;
+    }
+    const map = {
+        Escape: 'escape',
+        Tab: 'tab',
+        Enter: 'enter',
+        Backspace: 'backspace',
+        Delete: 'delete',
+        Home: 'home',
+        End: 'end',
+        PageUp: 'page_up',
+        PageDown: 'page_down',
+    };
+    if (map[key]) return map[key];
+    if (key.startsWith('Arrow')) {
+        const d = key.slice(5).toLowerCase();
+        if (d === 'up' || d === 'down' || d === 'left' || d === 'right') return d;
+    }
+    if (/^f\d{1,2}$/i.test(key)) return key.toLowerCase();
+    return null;
+}
+
+/**
+ * @param {KeyboardEvent} e
+ * @returns {{ modifiers: string[], key: string } | null}
+ */
+function eventToChord(e) {
+    const gm =
+        typeof e.getModifierState === 'function'
+            ? (/** @type {string} */ s) => e.getModifierState(s)
+            : () => false;
+
+    const mods = [];
+    if (e.metaKey || gm('Meta')) mods.push('cmd');
+    if (e.ctrlKey || gm('Control')) mods.push('ctrl');
+    // macOS Option: usually ``altKey``; ``getModifierState('Alt')`` catches WebKit / embedded cases.
+    if (e.altKey || gm('Alt') || gm('AltGraph')) mods.push('alt');
+    if (e.shiftKey || gm('Shift')) mods.push('shift');
+    if (!mods.length) return null;
+
+    // Prefer ``code`` so Option/Alt + letter still yields the base letter (``key`` may be "Dead" or "∂").
+    let key = logicalKeyFromCode(e);
+    if (!key) key = normalizeSpecialKey(e.key);
+    if (!key) return null;
+
+    const order = { alt: 0, cmd: 1, ctrl: 2, shift: 3 };
+    const uniq = [...new Set(mods)].sort((a, b) => order[a] - order[b]);
+    return { modifiers: uniq, key };
+}
 
 /** Defaults for local provider URLs (matches server defaults / _default/settings.json). */
 export const LM_STUDIO_DEFAULT_URL = 'http://localhost:1234';
@@ -42,6 +255,15 @@ export async function saveSettings(updates) {
         });
         debugLog('SETTINGS', 'Saved settings');
         applySettings(currentSettings);
+        window.dispatchEvent(
+            new CustomEvent('aiframe-settings-saved', { detail: { ...currentSettings } })
+        );
+        if (
+            updates &&
+            ('dictation_hotkey_toggle' in updates || 'dictation_hotkey_cancel' in updates)
+        ) {
+            void refreshDictationHotkeySidecarStatus();
+        }
         return currentSettings;
     } catch (e) {
         debugError('SETTINGS', 'Failed to save:', e);
@@ -91,6 +313,15 @@ function applySettings(settings) {
     if (dictationVocab) {
         dictationVocab.value =
             settings.dictation_vocabulary != null ? settings.dictation_vocabulary : '';
+    }
+
+    const hotToggleDisp = document.getElementById('dictation-hotkey-toggle-display');
+    if (hotToggleDisp) {
+        hotToggleDisp.textContent = formatChordDisplay(settings.dictation_hotkey_toggle);
+    }
+    const hotCancelDisp = document.getElementById('dictation-hotkey-cancel-display');
+    if (hotCancelDisp) {
+        hotCancelDisp.textContent = formatChordDisplay(settings.dictation_hotkey_cancel);
     }
 }
 
@@ -471,6 +702,70 @@ export function renderDebugFlags() {
 }
 
 /**
+ * Update global hotkey sidecar heartbeat banner (Preferences).
+ */
+async function refreshDictationHotkeySidecarStatus() {
+    const el = document.getElementById('dictation-hotkey-sidecar-status');
+    if (!el) return;
+
+    const settings = getCurrentSettings();
+    const hasToggle = settings.dictation_hotkey_toggle != null;
+
+    try {
+        const s = await api('/api/dictation/hotkey/status');
+        if (!s.macos_dictation_hotkeys_supported) {
+            el.hidden = false;
+            el.className = 'setting-hint dictation-hotkey-sidecar-status sidecar-warn';
+            el.textContent =
+                'Global dictation hotkeys are only available when this server runs on macOS.';
+            return;
+        }
+
+        if (!hasToggle) {
+            el.hidden = true;
+            el.textContent = '';
+            return;
+        }
+
+        if (s.agent_running_for_you) {
+            el.hidden = false;
+            el.className = 'setting-hint dictation-hotkey-sidecar-status sidecar-ok';
+            const via =
+                s.liveness_source === 'ping'
+                    ? ' (responded to HTTP ping on 127.0.0.1)'
+                    : ' (recent file heartbeat)';
+            el.textContent = `Hotkey sidecar: running for your account${via}.`;
+            return;
+        }
+
+        el.hidden = false;
+        el.className = 'setting-hint dictation-hotkey-sidecar-status sidecar-warn';
+        const hbUser = s.heartbeat_username;
+        const age = s.heartbeat_age_sec;
+        const you = s.session_username || '(unknown)';
+        if (s.liveness_source === 'ping' && s.ping_username && s.ping_username !== s.session_username) {
+            el.textContent = `Hotkey sidecar: running for account “${s.ping_username}”, but you are logged in as “${you}”. Save a hotkey here while logged in, or set VOICE_DICTATION_AI_FRAME_USER=${you} and restart ./start.sh.`;
+        } else if (hbUser && age != null && age <= 120 && hbUser !== s.session_username) {
+            el.textContent = `Hotkey sidecar: running for account “${hbUser}”, but you are logged in as “${you}”. Save a hotkey here while logged in, or set VOICE_DICTATION_AI_FRAME_USER=${you} and restart ./start.sh.`;
+        } else if (s.ping_unreachable && (age == null || age > 100)) {
+            el.textContent =
+                'Hotkey sidecar: not detected (HTTP ping to 127.0.0.1:18447/health failed and no fresh file fallback). Restart with ./start.sh or check logs/hotkey-agent.log; override port with VOICE_DICTATION_HOTKEY_PING_PORT if needed.';
+        } else if (age != null && age > 100) {
+            el.textContent = `Hotkey sidecar: not detected (last file heartbeat ${Math.round(age)}s ago). Start the stack with ./start.sh or restart the agent; check logs/hotkey-agent.log.`;
+        } else {
+            el.textContent =
+                'Hotkey sidecar: not detected. Start the app with ./start.sh (not uvicorn alone) so run_hotkey_agent.py runs, then try again.';
+        }
+    } catch (e) {
+        el.hidden = false;
+        el.className = 'setting-hint dictation-hotkey-sidecar-status sidecar-warn';
+        el.textContent =
+            'Could not check hotkey sidecar status (are you logged in?). Global hotkeys still need ./start.sh.';
+        debugError('SETTINGS', 'hotkey status:', e);
+    }
+}
+
+/**
  * Open settings modal
  */
 async function openSettings() {
@@ -484,6 +779,11 @@ async function openSettings() {
         loadProviders();
         checkProviderStatus();
         await loadSpeechModels();
+        await refreshDictationHotkeySidecarStatus();
+        if (dictationHotkeyStatusPoll) {
+            clearInterval(dictationHotkeyStatusPoll);
+        }
+        dictationHotkeyStatusPoll = setInterval(refreshDictationHotkeySidecarStatus, 8000);
     }
 }
 
@@ -491,6 +791,11 @@ async function openSettings() {
  * Close settings modal
  */
 function closeSettings() {
+    if (dictationHotkeyStatusPoll) {
+        clearInterval(dictationHotkeyStatusPoll);
+        dictationHotkeyStatusPoll = null;
+    }
+    stopDictationHotkeyCapture();
     const modal = document.getElementById('settings-modal');
     const overlay = document.getElementById('settings-overlay');
     
@@ -685,6 +990,45 @@ export function initSettings() {
                     debugError('SETTINGS', 'Dictation instructions save failed:', e);
                 }
             }, 600);
+        });
+    }
+
+    const settingsModal = document.getElementById('settings-modal');
+    if (settingsModal) {
+        settingsModal.addEventListener('click', (e) => {
+            const btn = e.target instanceof Element ? e.target.closest('button') : null;
+            const id = btn?.id || '';
+            if (id === 'dictation-hotkey-toggle-select') {
+                e.preventDefault();
+                startDictationHotkeyCapture('toggle');
+                return;
+            }
+            if (id === 'dictation-hotkey-cancel-select') {
+                e.preventDefault();
+                startDictationHotkeyCapture('cancel');
+                return;
+            }
+            if (id === 'dictation-hotkey-toggle-clear') {
+                e.preventDefault();
+                void (async () => {
+                    try {
+                        await saveSettings({ dictation_hotkey_toggle: null });
+                    } catch (err) {
+                        debugError('SETTINGS', 'Hotkey clear failed:', err);
+                    }
+                })();
+                return;
+            }
+            if (id === 'dictation-hotkey-cancel-clear') {
+                e.preventDefault();
+                void (async () => {
+                    try {
+                        await saveSettings({ dictation_hotkey_cancel: null });
+                    } catch (err) {
+                        debugError('SETTINGS', 'Hotkey clear failed:', err);
+                    }
+                })();
+            }
         });
     }
 
