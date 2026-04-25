@@ -91,15 +91,9 @@ if errorlevel 1 (
 python -m pip install -U pip wheel setuptools
 
 echo ==^> Installing agent dependencies (requirements-agent.txt^) ...
-echo     (includes PyObjC for macOS Carbon hotkeys when you use this tree on Mac; Windows skips unused wheels^)
+echo     (PyObjC / quickmachotkey install only on macOS via PEP 508 markers; Windows uses pynput hotkeys.^)
 python -m pip install -r requirements-agent.txt
 if errorlevel 1 exit /b 1
-python -c "import importlib; raise SystemExit(0 if importlib.util.find_spec('quickmachotkey') else 1)" >nul 2>&1
-if errorlevel 1 (
-  echo ==^> Installing quickmachotkey ^(missing from environment^) ...
-  python -m pip install quickmachotkey
-  if errorlevel 1 exit /b 1
-)
 
 if not "%SKIP_AI_FRAME%"=="1" (
   echo ==^> Installing ai-frame (settings UI^) dependencies ...
@@ -142,6 +136,7 @@ echo.
 echo ==^> Done.
 echo     Activate:  .venv\Scripts\activate.bat
 echo     Agent:     python run_agent.py record-once --seconds 4 --no-type
-echo     Settings:  start from repo root per README ^(uvicorn / start.sh on Mac^)
+echo     Settings:  start.bat from repo root ^(or run_combined_app.py / uvicorn per README^)
 echo     Config:    %USERPROFILE%\.voice-dictation\config.json ^(created on first agent run if missing^)
+echo     Note: global hotkey hooks ^(pynput^) may require AV exclusions if binds fail.
 exit /b 0
