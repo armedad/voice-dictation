@@ -116,12 +116,21 @@
                     <p id="dictation-context-base-saved" class="dictation-instructions-saved" hidden>Saved.</p>
                 </div>
                 <div class="context-section">
-                    <h2 class="context-section-title">Last dictation — request sent to cleanup LLM</h2>
-                    <p class="setting-hint">Read-only. Updates after each successful Dictate 10s run.</p>
+                    <h2 class="context-section-title">Dictation history</h2>
+                    <p id="dictation-last-done-at" class="setting-hint dictation-last-done-at">Last dictation: —</p>
+                    <div class="context-history-toolbar" role="group" aria-label="Navigate dictation history">
+                        <button type="button" id="dictation-context-back" class="btn-secondary" title="Older dictation">Back</button>
+                        <span id="dictation-context-position" class="context-history-position">—</span>
+                        <button type="button" id="dictation-context-forward" class="btn-secondary" title="Newer dictation">Forward</button>
+                    </div>
+                </div>
+                <div class="context-section">
+                    <h2 class="context-section-title">Dictation — request sent to cleanup LLM</h2>
+                    <p class="setting-hint">Read-only. Browse prior runs with Back / Forward above.</p>
                     <textarea id="dictation-last-request" class="dictation-instructions-textarea context-readonly" rows="12" readonly></textarea>
                 </div>
                 <div class="context-section">
-                    <h2 class="context-section-title">Last dictation — LLM response (typed into focus)</h2>
+                    <h2 class="context-section-title">Dictation — LLM response (typed into focus)</h2>
                     <div class="context-results-row">
                         <textarea id="dictation-last-response" class="dictation-instructions-textarea context-readonly context-results-text" rows="8" readonly></textarea>
                         <button type="button" id="dictation-last-response-copy" class="btn-secondary">Copy</button>
@@ -184,23 +193,12 @@
                     <div class="settings-section dictation-hotkeys-section">
                         <h3 class="settings-section-title">Global dictation hotkeys</h3>
                         <p class="setting-hint">
-                            macOS: global hotkeys only work while <code>run_hotkey_agent.py</code> is running — start the stack with
-                            <code>./start.sh</code> (not <code>uvicorn</code> alone). The sidecar registers your chords with the system via Carbon
-                            <code>RegisterEventHotKey</code> (not a global key tap), so <strong>Input Monitoring</strong> is usually not required for hotkeys.
-                            Accessibility may still be needed for <em>typing</em> the transcript into other apps (handled by the server process).
-                            Saving a hotkey here records which account the agent should use; override with env
-                            <code>VOICE_DICTATION_AI_FRAME_USER</code> if needed. If a chord never fires, check <code>logs/hotkey-agent.log</code> for
-                            <code>RegisterEventHotKey</code> errors or conflicts with another app using the same shortcut exclusively.
+                            macOS: global hotkeys are handled by an embedded runtime in this app process when started via
+                            <code>./start.sh</code>. Hotkeys use Carbon <code>RegisterEventHotKey</code> (not a global key tap), so
+                            <strong>Input Monitoring</strong> is usually not required for hotkeys. Accessibility may still be needed for
+                            <em>typing</em> the transcript into other apps. If a chord never fires, check <code>logs/hotkey-agent.log</code>
+                            for <code>RegisterEventHotKey</code> errors or conflicts with another app using the same shortcut.
                         </p>
-                        <p id="dictation-hotkey-sidecar-status" class="setting-hint dictation-hotkey-sidecar-status" role="status" hidden></p>
-                        <details class="setting-hint dictation-hotkey-sidecar-why">
-                            <summary>Why a separate hotkey process?</summary>
-                            <p>
-                                The sidecar registers only your chosen shortcuts with the OS (Carbon), runs a small CFRunLoop thread, and
-                                survives independently of the web server. That avoids coupling to uvicorn worker/reload behaviour and keeps
-                                logging (<code>logs/hotkey-agent.log</code>) obvious. The sidecar only talks to this app over loopback HTTP.
-                            </p>
-                        </details>
                         <p id="dictation-hotkey-capture-status" class="setting-hint dictation-hotkey-capture-status" hidden></p>
                         <input
                             type="text"

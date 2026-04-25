@@ -5,6 +5,8 @@ numpy>=1.26.0
 sounddevice>=0.5.1
 pynput>=1.7.7
 # Carbon RegisterEventHotKey + CFRunLoopPerformBlock (hotkey sidecar); typing still uses pynput
+# Carbon RegisterEventHotKey + quickmachotkey (when enabled)
 pyobjc-framework-Cocoa>=11.0
+quickmachotkey>=2025.7.28
 # Local speech-to-text (default transcription provider); first run downloads weights
 faster-whisper>=1.0.0

@@ -421,6 +421,29 @@ html, body {
     cursor: default;
 }
 
+.dictation-last-done-at {
+    margin-bottom: 10px;
+}
+
+.context-history-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 4px;
+}
+
+.context-history-toolbar .btn-secondary {
+    min-width: 88px;
+}
+
+.context-history-position {
+    font-size: 13px;
+    color: var(--text-secondary);
+    flex: 1;
+    min-width: 140px;
+}
+
 .context-results-row {
     display: flex;
     gap: 12px;
@@ -728,38 +751,6 @@ html, body {
 .dictation-hotkey-capture-status:not([hidden]) {
     color: var(--accent);
     font-weight: 500;
-}
-
-.dictation-hotkey-sidecar-status:not([hidden]) {
-    border-radius: 8px;
-    padding: 10px 12px;
-    margin-top: 8px;
-}
-
-.dictation-hotkey-sidecar-status.sidecar-ok {
-    background: rgba(34, 197, 94, 0.12);
-    border: 1px solid rgba(34, 197, 94, 0.35);
-    color: var(--text-primary);
-}
-
-.dictation-hotkey-sidecar-status.sidecar-warn {
-    background: rgba(251, 191, 36, 0.12);
-    border: 1px solid rgba(251, 191, 36, 0.45);
-    color: var(--text-primary);
-}
-
-.dictation-hotkey-sidecar-why {
-    margin-top: 10px;
-    font-size: 12px;
-}
-
-.dictation-hotkey-sidecar-why[open] > summary {
-    margin-bottom: 8px;
-}
-
-.dictation-hotkey-sidecar-why p {
-    margin: 0;
-    line-height: 1.45;
 }
 
 .setting-hint {

@@ -22,7 +22,6 @@ let dictationHotkeyCaptureField = null;
 
 /** Abort previous window keydown listener when starting a new capture or closing settings. */
 let dictationHotkeyKeydownAbort = null;
-let dictationHotkeyStatusPoll = null;
 
 function stopDictationHotkeyCapture() {
     dictationHotkeyKeydownAbort?.abort();
@@ -258,12 +257,6 @@ export async function saveSettings(updates) {
         window.dispatchEvent(
             new CustomEvent('aiframe-settings-saved', { detail: { ...currentSettings } })
         );
-        if (
-            updates &&
-            ('dictation_hotkey_toggle' in updates || 'dictation_hotkey_cancel' in updates)
-        ) {
-            void refreshDictationHotkeySidecarStatus();
-        }
         return currentSettings;
     } catch (e) {
         debugError('SETTINGS', 'Failed to save:', e);
@@ -702,70 +695,6 @@ export function renderDebugFlags() {
 }
 
 /**
- * Update global hotkey sidecar heartbeat banner (Preferences).
- */
-async function refreshDictationHotkeySidecarStatus() {
-    const el = document.getElementById('dictation-hotkey-sidecar-status');
-    if (!el) return;
-
-    const settings = getCurrentSettings();
-    const hasToggle = settings.dictation_hotkey_toggle != null;
-
-    try {
-        const s = await api('/api/dictation/hotkey/status');
-        if (!s.macos_dictation_hotkeys_supported) {
-            el.hidden = false;
-            el.className = 'setting-hint dictation-hotkey-sidecar-status sidecar-warn';
-            el.textContent =
-                'Global dictation hotkeys are only available when this server runs on macOS.';
-            return;
-        }
-
-        if (!hasToggle) {
-            el.hidden = true;
-            el.textContent = '';
-            return;
-        }
-
-        if (s.agent_running_for_you) {
-            el.hidden = false;
-            el.className = 'setting-hint dictation-hotkey-sidecar-status sidecar-ok';
-            const via =
-                s.liveness_source === 'ping'
-                    ? ' (responded to HTTP ping on 127.0.0.1)'
-                    : ' (recent file heartbeat)';
-            el.textContent = `Hotkey sidecar: running for your account${via}.`;
-            return;
-        }
-
-        el.hidden = false;
-        el.className = 'setting-hint dictation-hotkey-sidecar-status sidecar-warn';
-        const hbUser = s.heartbeat_username;
-        const age = s.heartbeat_age_sec;
-        const you = s.session_username || '(unknown)';
-        if (s.liveness_source === 'ping' && s.ping_username && s.ping_username !== s.session_username) {
-            el.textContent = `Hotkey sidecar: running for account “${s.ping_username}”, but you are logged in as “${you}”. Save a hotkey here while logged in, or set VOICE_DICTATION_AI_FRAME_USER=${you} and restart ./start.sh.`;
-        } else if (hbUser && age != null && age <= 120 && hbUser !== s.session_username) {
-            el.textContent = `Hotkey sidecar: running for account “${hbUser}”, but you are logged in as “${you}”. Save a hotkey here while logged in, or set VOICE_DICTATION_AI_FRAME_USER=${you} and restart ./start.sh.`;
-        } else if (s.ping_unreachable && (age == null || age > 100)) {
-            el.textContent =
-                'Hotkey sidecar: not detected (HTTP ping to 127.0.0.1:18447/health failed and no fresh file fallback). Restart with ./start.sh or check logs/hotkey-agent.log; override port with VOICE_DICTATION_HOTKEY_PING_PORT if needed.';
-        } else if (age != null && age > 100) {
-            el.textContent = `Hotkey sidecar: not detected (last file heartbeat ${Math.round(age)}s ago). Start the stack with ./start.sh or restart the agent; check logs/hotkey-agent.log.`;
-        } else {
-            el.textContent =
-                'Hotkey sidecar: not detected. Start the app with ./start.sh (not uvicorn alone) so run_hotkey_agent.py runs, then try again.';
-        }
-    } catch (e) {
-        el.hidden = false;
-        el.className = 'setting-hint dictation-hotkey-sidecar-status sidecar-warn';
-        el.textContent =
-            'Could not check hotkey sidecar status (are you logged in?). Global hotkeys still need ./start.sh.';
-        debugError('SETTINGS', 'hotkey status:', e);
-    }
-}
-
-/**
  * Open settings modal
  */
 async function openSettings() {
@@ -779,11 +708,6 @@ async function openSettings() {
         loadProviders();
         checkProviderStatus();
         await loadSpeechModels();
-        await refreshDictationHotkeySidecarStatus();
-        if (dictationHotkeyStatusPoll) {
-            clearInterval(dictationHotkeyStatusPoll);
-        }
-        dictationHotkeyStatusPoll = setInterval(refreshDictationHotkeySidecarStatus, 8000);
     }
 }
 
@@ -791,10 +715,6 @@ async function openSettings() {
  * Close settings modal
  */
 function closeSettings() {
-    if (dictationHotkeyStatusPoll) {
-        clearInterval(dictationHotkeyStatusPoll);
-        dictationHotkeyStatusPoll = null;
-    }
     stopDictationHotkeyCapture();
     const modal = document.getElementById('settings-modal');
     const overlay = document.getElementById('settings-overlay');
