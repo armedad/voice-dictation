@@ -1,5 +1,8 @@
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
+# Dictation mic preview in Preferences (PortAudio default device; same stack as agent capture)
+sounddevice>=0.5.1
+numpy>=1.26.0
 httpx>=0.26.0
 python-dotenv>=1.0.0
 pydantic>=2.9.2

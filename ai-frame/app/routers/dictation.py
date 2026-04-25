@@ -22,7 +22,7 @@ from app.services.dictation_cleanup import (
     build_cleanup_endpoint,
     resolve_transcription_endpoint,
 )
-from app.services.storage import UserDataStore
+from app.services.storage import Settings, UserDataStore
 from app.services.dictation_events import publish_event
 
 _DEBUG_LOG_PATH = "/Users/chee/zapier ai project/.cursor/debug-55f014.log"
@@ -221,6 +221,52 @@ async def dictation_prompt_defaults(request: Request) -> dict[str, str]:
     return {"default_cleanup_base_prompt": DEFAULT_CLEANUP_SYSTEM_PROMPT.strip()}
 
 
+def _resolve_sounddevice_input_index(settings: Settings) -> int | None:
+    """
+    ``None`` → use PortAudio / OS default for this process (omit ``device`` in ``sounddevice``).
+
+    If the saved index no longer exists (device unplugged), return ``None``.
+    """
+    from core.portaudio_devices import list_input_devices
+
+    raw = settings.dictation_input_device_index
+    if raw is None:
+        return None
+    if not isinstance(raw, int) or raw < 0:
+        return None
+    devices, _, err = list_input_devices()
+    if err:
+        return None
+    valid = {int(d["index"]) for d in devices}
+    if raw not in valid:
+        return None
+    return raw
+
+
+@router.get("/dictation/audio-input")
+async def dictation_audio_input(request: Request) -> dict[str, Any]:
+    """Enumerate input microphones + current system default (Preferences Voice input)."""
+    if not request.cookies.get("aiframe_session"):
+        raise HTTPException(status_code=401, detail="Not logged in")
+
+    from core.portaudio_devices import list_input_devices
+
+    devices, system_default, err = await asyncio.to_thread(list_input_devices)
+    if err:
+        return {
+            "ok": False,
+            "error": err,
+            "devices": [],
+            "system_default": system_default,
+        }
+    return {
+        "ok": True,
+        "error": None,
+        "devices": devices,
+        "system_default": system_default,
+    }
+
+
 @router.get("/dictation/last-context")
 async def dictation_last_context(
     request: Request,
@@ -293,6 +339,7 @@ async def _execute_dictation(
     from core.orchestrator import run_pipeline
 
     settings = store.get_settings()
+    sd_device = _resolve_sounddevice_input_index(settings)
     llm_cleanup = settings.dictation_llm_cleanup_enabled
 
     clean_ep = None
@@ -341,6 +388,7 @@ async def _execute_dictation(
                 None,
                 cancel_event,
                 stop_event=_dictation_stop,
+                device=sd_device,
             )
         except Exception as e:
             hint = (

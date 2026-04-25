@@ -226,6 +226,21 @@
                             </select>
                         </div>
                     </div>
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">Voice input</h3>
+                        <p class="setting-hint">
+                            Dictation uses PortAudio (same stack as the rest of this app).
+                            <strong>System microphone</strong> follows the OS default input for this process; pick a
+                            specific device to lock dictation to that mic regardless of system default.
+                        </p>
+                        <div class="setting-row">
+                            <label for="dictation-input-device-select">Microphone</label>
+                            <select id="dictation-input-device-select" class="dictation-input-device-select">
+                                <option value="">Loading…</option>
+                            </select>
+                        </div>
+                        <p id="dictation-input-device-hint" class="setting-hint dictation-input-device-hint" hidden></p>
+                    </div>
                     <div class="settings-section dictation-hotkeys-section">
                         <h3 class="settings-section-title">Global dictation hotkeys</h3>
                         <p class="setting-hint">

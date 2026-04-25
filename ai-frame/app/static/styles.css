@@ -857,6 +857,31 @@ html, body {
     color: var(--text-secondary);
 }
 
+.dictation-input-device-select {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 12px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.dictation-input-device-select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.dictation-input-device-hint:not([hidden]) {
+    margin-top: 6px;
+    line-height: 1.45;
+}
+
+.dictation-input-device-hint.dictation-input-device-hint--error {
+    color: var(--danger);
+}
+
 .setting-url-with-default {
     display: flex;
     flex: 1;

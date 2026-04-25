@@ -66,6 +66,7 @@ class UpdateSettingsRequest(BaseModel):
     dictation_custom_system_prompt_base: Optional[str] = None
     dictation_hotkey_toggle: Optional[dict[str, Any]] = None
     dictation_hotkey_cancel: Optional[dict[str, Any]] = None
+    dictation_input_device_index: Optional[int] = None
 
 
 @router.get("/settings")
@@ -81,6 +82,28 @@ async def update_settings(request: Request, req: UpdateSettingsRequest):
     """Update settings (partial PATCH: only fields present in the JSON body)."""
     store = get_user_store(request)
     patch = req.model_dump(exclude_unset=True)
+
+    if "dictation_input_device_index" in patch:
+        v = patch["dictation_input_device_index"]
+        if v is not None:
+            if not isinstance(v, int) or v < 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="dictation_input_device_index must be null or a non-negative integer.",
+                )
+            from core.portaudio_devices import valid_input_indices
+
+            valid = valid_input_indices()
+            if not valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No input microphones are available (PortAudio / sounddevice).",
+                )
+            if v not in valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail="That microphone is not available. Choose another device or System microphone.",
+                )
 
     from core.hotkey_chord import parse_chord_or_raise
 

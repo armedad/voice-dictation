@@ -46,6 +46,8 @@ class Settings(BaseModel):
     # Global dictation hotkeys (JSON chord or null); see core.hotkey_chord
     dictation_hotkey_toggle: Optional[dict[str, Any]] = None
     dictation_hotkey_cancel: Optional[dict[str, Any]] = None
+    # None = follow OS / PortAudio default input; int = explicit PortAudio input device index
+    dictation_input_device_index: Optional[int] = None
 
 
 def normalize_url(url: str) -> str:
@@ -222,7 +224,13 @@ class UserDataStore:
         
         # Merge: user settings override defaults
         merged_data = defaults.model_dump()
-        nullable_keys = frozenset({"dictation_hotkey_toggle", "dictation_hotkey_cancel"})
+        nullable_keys = frozenset(
+            {
+                "dictation_hotkey_toggle",
+                "dictation_hotkey_cancel",
+                "dictation_input_device_index",
+            }
+        )
         for key, value in user_data.items():
             if key in nullable_keys:
                 merged_data[key] = value
@@ -253,11 +261,17 @@ class UserDataStore:
     def update_settings_patch(self, patch: dict[str, Any]) -> Settings:
         """Apply only keys present in ``patch``; allows None for nullable hotkey fields."""
         settings = self.get_settings()
-        nullable_hotkeys = frozenset({"dictation_hotkey_toggle", "dictation_hotkey_cancel"})
+        nullable_settings = frozenset(
+            {
+                "dictation_hotkey_toggle",
+                "dictation_hotkey_cancel",
+                "dictation_input_device_index",
+            }
+        )
         for key, value in patch.items():
             if not hasattr(settings, key):
                 continue
-            if key in nullable_hotkeys:
+            if key in nullable_settings:
                 setattr(settings, key, value)
                 continue
             if value is None:

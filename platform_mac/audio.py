@@ -55,6 +55,7 @@ def record_wav_bytes_interruptible(
     stop_event: threading.Event | None = None,
     sample_rate: int = 16000,
     chunk_s: float = 0.25,
+    device: int | None = None,
 ) -> tuple[bytes, bool, bool]:
     """
     Record mono WAV while polling ``cancel_event`` between reads.
@@ -74,16 +75,20 @@ def record_wav_bytes_interruptible(
     parts: list[np.ndarray] = []
     n_read = 0
 
-    with sd.InputStream(
+    stream_kw: dict = dict(
         samplerate=sample_rate,
         channels=1,
         dtype="float32",
         blocksize=block_frames,
-    ) as stream:
+    )
+    if device is not None:
+        stream_kw["device"] = device
+
+    with sd.InputStream(**stream_kw) as stream:
         _debug_emit(
             "platform_mac/audio.py:record_wav_bytes_interruptible",
             "input stream opened",
-            {"sample_rate": sample_rate, "block_frames": block_frames},
+            {"sample_rate": sample_rate, "block_frames": block_frames, "device": device},
         )
         while n_target is None or n_read < n_target:
             if cancel_event.is_set():
