@@ -31,6 +31,12 @@ function stopDictationHotkeyCapture() {
     if (st) {
         st.hidden = true;
         st.textContent = '';
+        st.classList.remove('dictation-hotkey-footer-status--error');
+        st.style.color = '';
+    }
+    const cancelBtn = document.getElementById('dictation-hotkey-capture-cancel');
+    if (cancelBtn) {
+        cancelBtn.hidden = true;
     }
 }
 
@@ -42,11 +48,16 @@ function startDictationHotkeyCapture(field) {
     dictationHotkeyCaptureField = field;
 
     const st = document.getElementById('dictation-hotkey-capture-status');
+    const cancelBtn = document.getElementById('dictation-hotkey-capture-cancel');
     if (st) {
+        st.classList.remove('dictation-hotkey-footer-status--error');
         st.style.color = '';
         st.hidden = false;
         st.textContent =
-            'Listening… Hold at least one modifier (⌘ / Ctrl / ⌥ / Shift) and press a letter or key. Press Esc alone to cancel. If keys never register, open this URL in Safari or Chrome (some embedded previews reserve shortcuts).';
+            'Listening… Hold at least one modifier (⌘ / Ctrl / ⌥ / Shift) and press a letter or key. Press Esc alone or click Cancel to keep your current shortcut. If keys never register, open this URL in Safari or Chrome (some embedded previews reserve shortcuts).';
+    }
+    if (cancelBtn) {
+        cancelBtn.hidden = false;
     }
 
     const onKeyDown = async (e) => {
@@ -85,7 +96,8 @@ function startDictationHotkeyCapture(field) {
             const stEl = document.getElementById('dictation-hotkey-capture-status');
             if (stEl) {
                 stEl.hidden = false;
-                stEl.style.color = 'var(--error, #f87171)';
+                stEl.classList.add('dictation-hotkey-footer-status--error');
+                stEl.style.color = '';
                 stEl.textContent =
                     (err && err.message) ||
                     'Could not save hotkey. Check that you are logged in.';
@@ -926,6 +938,11 @@ export function initSettings() {
             if (id === 'dictation-hotkey-cancel-select') {
                 e.preventDefault();
                 startDictationHotkeyCapture('cancel');
+                return;
+            }
+            if (id === 'dictation-hotkey-capture-cancel') {
+                e.preventDefault();
+                stopDictationHotkeyCapture();
                 return;
             }
             if (id === 'dictation-hotkey-toggle-clear') {

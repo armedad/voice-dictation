@@ -748,9 +748,48 @@ html, body {
     opacity: 0;
 }
 
-.dictation-hotkey-capture-status:not([hidden]) {
+/* Preferences / Global dictation hotkeys: status + cancel (reserved slot avoids row jump). */
+.dictation-hotkey-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+    min-height: 44px;
+}
+
+.dictation-hotkey-footer-slot {
+    flex: 1;
+    min-width: 0;
+    min-height: 2.75em;
+    display: flex;
+    align-items: center;
+}
+
+.dictation-hotkey-footer-status {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.dictation-hotkey-footer-status:not([hidden]) {
     color: var(--accent);
     font-weight: 500;
+}
+
+.dictation-hotkey-footer-status.dictation-hotkey-footer-status--error:not([hidden]) {
+    color: var(--error, #f87171);
+    font-weight: 500;
+}
+
+.dictation-hotkey-footer-actions {
+    flex-shrink: 0;
+    min-width: 88px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
 }
 
 .setting-hint {

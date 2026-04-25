@@ -473,8 +473,13 @@ def main() -> None:
         return mtime
 
     if use_quick:
+        from PyObjCTools import AppHelper as _AppHelper
+
+        _quick_poll_sec = 0.05
         last_applied_mtime = _apply_hotkeys_once()
-        _LOG.info("QuickMachHotkey mode: hotkeys apply once; restart to rebind.")
+        _LOG.info(
+            "QuickMachHotkey mode: live reload (POST /hotkeys/reload + periodic settings check)."
+        )
         # region agent log
         _debug_emit(
             run_id=run_id,
@@ -484,6 +489,24 @@ def main() -> None:
             data={"env_value": quick_flag},
         )
         # endregion
+
+        def _quick_poll_tick() -> None:
+            nonlocal last_applied_mtime, last_fallback_poll_at
+            now = time.time()
+            fallback_due = (now - last_fallback_poll_at) >= _HOTKEY_SETTINGS_POLL_FALLBACK_SEC
+            if fallback_due:
+                last_fallback_poll_at = now
+            need_refresh = (
+                reload_requested.is_set()
+                or fallback_due
+                or last_applied_mtime is None
+            )
+            if reload_requested.is_set():
+                reload_requested.clear()
+            if need_refresh:
+                last_applied_mtime = _apply_hotkeys_once()
+            _AppHelper.callLater(_quick_poll_sec, _quick_poll_tick)
+
         # region agent log
         _debug_emit(
             run_id=run_id,
@@ -493,6 +516,7 @@ def main() -> None:
             data={},
         )
         # endregion
+        _AppHelper.callAfter(_quick_poll_tick)
         carbon.run_event_loop()
         return
 
