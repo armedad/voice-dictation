@@ -13,13 +13,37 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import json
 import logging
 from ctypes import POINTER, Structure, byref, c_uint32, c_ulong, c_void_p
+import threading
+import time
 from typing import Any, Callable
 
 from core.hotkey_chord import parse_chord_or_raise
 
 _LOG = logging.getLogger("hotkey_agent.carbon")
+_DEBUG_LOG_PATH = "/Users/chee/zapier ai project/.cursor/debug-55f014.log"
+_DEBUG_SESSION_ID = "55f014"
+
+
+def _debug_emit(location: str, message: str, data: dict[str, Any]) -> None:
+    # region agent log
+    payload = {
+        "sessionId": _DEBUG_SESSION_ID,
+        "runId": f"carbon-{int(time.time())}",
+        "hypothesisId": "H5",
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    except OSError:
+        pass
+    # endregion
 
 # --- Carbon four-char codes (OSType / EventParamName / EventParamType) ---
 
@@ -299,6 +323,16 @@ class CarbonHotkeyController:
         self._install_handler_once()
         self._initialized = True
         _LOG.info("Carbon hotkey handler ready on this thread (pump CFRunLoop via pump_events)")
+        # region agent log
+        _debug_emit(
+            "platform_mac/carbon_hotkeys.py:initialize",
+            "initialized",
+            {
+                "thread": threading.current_thread().name,
+                "is_main_thread": threading.current_thread() is threading.main_thread(),
+            },
+        )
+        # endregion
 
     def start(self) -> None:
         """Backward-compatible alias for ``initialize``."""
@@ -315,6 +349,13 @@ class CarbonHotkeyController:
         try:
             CFRunLoopRunInMode(kCFRunLoopDefaultMode, float(timeout_sec), True)
         except TypeError:
+            # region agent log
+            _debug_emit(
+                "platform_mac/carbon_hotkeys.py:pump_events",
+                "CFRunLoopRunInMode fallback signature",
+                {"timeout_sec": timeout_sec},
+            )
+            # endregion
             CFRunLoopRunInMode(CFRunLoopGetCurrent(), kCFRunLoopDefaultMode, float(timeout_sec), True)
 
     def set_hotkeys(
@@ -363,6 +404,13 @@ class CarbonHotkeyController:
             cb = self._callbacks.get(int(hk.id))
             if cb:
                 _LOG.info("Carbon global hotkey fired id=%s", int(hk.id))
+                # region agent log
+                _debug_emit(
+                    "platform_mac/carbon_hotkeys.py:_handler",
+                    "hotkey event received",
+                    {"id": int(hk.id), "thread": threading.current_thread().name},
+                )
+                # endregion
                 try:
                     cb()
                 except Exception:
@@ -388,6 +436,13 @@ class CarbonHotkeyController:
             raise OSError(f"InstallEventHandler failed: {err}")
         self._handler_ref = href
         _LOG.info("Carbon InstallEventHandler installed for kEventHotKeyPressed")
+        # region agent log
+        _debug_emit(
+            "platform_mac/carbon_hotkeys.py:_install_handler_once",
+            "install handler ok",
+            {"target": "GetEventDispatcherTarget"},
+        )
+        # endregion
 
     def _unregister_all_hotkeys(self) -> None:
         for ref in self._hotkey_refs:
@@ -446,9 +501,23 @@ class CarbonHotkeyController:
                     "another app may own this shortcut exclusively.",
                     label,
                 )
+                # region agent log
+                _debug_emit(
+                    "platform_mac/carbon_hotkeys.py:_register_one",
+                    "register conflict",
+                    {"label": label, "vk": vk, "mods": mods, "err": err},
+                )
+                # endregion
                 return
             if err != noErr:
                 _LOG.error("%s RegisterEventHotKey failed OSStatus=%s vk=%#x mods=%#x", label, err, vk, mods)
+                # region agent log
+                _debug_emit(
+                    "platform_mac/carbon_hotkeys.py:_register_one",
+                    "register failed",
+                    {"label": label, "vk": vk, "mods": mods, "err": err},
+                )
+                # endregion
                 return
             self._hotkey_refs.append(href)
             self._callbacks[hid] = cb
@@ -459,6 +528,13 @@ class CarbonHotkeyController:
                 vk,
                 mods,
             )
+            # region agent log
+            _debug_emit(
+                "platform_mac/carbon_hotkeys.py:_register_one",
+                "register ok",
+                {"label": label, "hid": hid, "vk": vk, "mods": mods},
+            )
+            # endregion
 
         _register_one(toggle_chord, _TOGGLE_HOTID, on_toggle, "toggle")
         _register_one(cancel_chord, _CANCEL_HOTID, on_cancel, "cancel")

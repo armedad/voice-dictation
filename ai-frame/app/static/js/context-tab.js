@@ -7,15 +7,81 @@ import { saveSettings, getCurrentSettings } from './settings.js';
 import { debugLog, debugError } from './debug-flags.js';
 
 let contextBaseDebounce = null;
+/** Resolved server index for the row shown in the Context tab (0 = oldest). */
+let contextHistoryIndex = null;
+/** Total dictation snapshots (from last API response). */
+let contextHistoryTotal = 0;
 
-export async function refreshDictationLastContext() {
+function _formatCtxTs(iso) {
+    if (!iso || typeof iso !== 'string') return '—';
+    const d = Date.parse(iso);
+    if (Number.isNaN(d)) return iso;
+    try {
+        return new Date(d).toLocaleString(undefined, {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+        });
+    } catch (_e) {
+        return iso;
+    }
+}
+
+function _updateContextHistoryChrome(data) {
+    const lastEl = document.getElementById('dictation-last-done-at');
+    const posEl = document.getElementById('dictation-context-position');
+    const backBtn = document.getElementById('dictation-context-back');
+    const fwdBtn = document.getElementById('dictation-context-forward');
+    const total = typeof data.history_total === 'number' ? data.history_total : 0;
+    const idx = typeof data.history_index === 'number' ? data.history_index : null;
+
+    if (lastEl) {
+        if (total === 0) {
+            lastEl.textContent = 'Last dictation: none yet';
+        } else {
+            lastEl.textContent = `Last dictation: ${_formatCtxTs(data.last_dictation_timestamp)}`;
+        }
+    }
+    if (posEl) {
+        if (total === 0) {
+            posEl.textContent = 'No saved dictations';
+        } else if (idx != null) {
+            posEl.textContent = `${idx + 1} of ${total} · ${_formatCtxTs(data.current_timestamp)}`;
+        } else {
+            posEl.textContent = '—';
+        }
+    }
+    if (backBtn) {
+        backBtn.disabled = total === 0 || idx == null || idx <= 0;
+    }
+    if (fwdBtn) {
+        fwdBtn.disabled = total === 0 || idx == null || idx >= total - 1;
+    }
+}
+
+/**
+ * @param {{ resetToLatest?: boolean }} [options]
+ */
+export async function refreshDictationLastContext(options = {}) {
+    const { resetToLatest = false } = options;
     const reqEl = document.getElementById('dictation-last-request');
     const resEl = document.getElementById('dictation-last-response');
     if (!reqEl || !resEl) return;
+    if (resetToLatest) {
+        contextHistoryIndex = null;
+    }
+    const q =
+        contextHistoryIndex != null ? `dictation/last-context?index=${contextHistoryIndex}` : 'dictation/last-context';
     try {
-        const data = await api('dictation/last-context');
+        const data = await api(q);
         reqEl.value = data.verbatim_request || '';
         resEl.value = data.response_text_full || '';
+        if (typeof data.history_index === 'number') {
+            contextHistoryIndex = data.history_index;
+        } else {
+            contextHistoryIndex = null;
+        }
+        contextHistoryTotal = typeof data.history_total === 'number' ? data.history_total : 0;
+        _updateContextHistoryChrome(data);
     } catch (e) {
         debugError('CONTEXT', 'Failed to load last dictation context:', e);
     }
@@ -128,6 +194,18 @@ export function initContextTab() {
         } catch (e) {
             debugError('CONTEXT', 'Clipboard copy failed:', e);
         }
+    });
+
+    document.getElementById('dictation-context-back')?.addEventListener('click', () => {
+        if (contextHistoryIndex == null || contextHistoryIndex <= 0) return;
+        contextHistoryIndex -= 1;
+        refreshDictationLastContext({ resetToLatest: false }).catch((e) => debugError('CONTEXT', e));
+    });
+    document.getElementById('dictation-context-forward')?.addEventListener('click', () => {
+        if (contextHistoryIndex == null) return;
+        if (contextHistoryTotal <= 0 || contextHistoryIndex >= contextHistoryTotal - 1) return;
+        contextHistoryIndex += 1;
+        refreshDictationLastContext({ resetToLatest: false }).catch((e) => debugError('CONTEXT', e));
     });
 
     window.addEventListener('aiframe-settings-saved', () => {

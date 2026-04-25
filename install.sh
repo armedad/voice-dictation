@@ -51,16 +51,18 @@ fi
 
 echo "==> Voice dictation MVP install (root: $ROOT)"
 
-if command -v python3.11 >/dev/null 2>&1; then
-  PY=python3.11
+if command -v python3.13 >/dev/null 2>&1; then
+  PY=python3.13
 elif command -v python3.12 >/dev/null 2>&1; then
   PY=python3.12
+elif command -v python3.11 >/dev/null 2>&1; then
+  PY=python3.11
 else
   PY=python3
 fi
 
 if ! command -v "$PY" >/dev/null 2>&1; then
-  echo "error: need python3 (ideally 3.11+) on PATH" >&2
+  echo "error: need python3 (3.10+; install.sh prefers python3.13, then 3.12, then 3.11) on PATH" >&2
   exit 1
 fi
 
@@ -102,6 +104,10 @@ python -m pip install -U pip wheel setuptools
 echo "==> Installing agent dependencies (requirements-agent.txt) ..."
 echo "    (includes PyObjC for macOS Carbon global hotkeys; mic/STT/httpx/pynput per that file)"
 python -m pip install -r requirements-agent.txt
+if ! python -c 'import importlib; raise SystemExit(0 if importlib.util.find_spec("quickmachotkey") else 1)' >/dev/null 2>&1; then
+  echo "==> Installing quickmachotkey (missing from environment) ..."
+  python -m pip install quickmachotkey
+fi
 
 if [[ "$SKIP_AI_FRAME" != true ]]; then
   echo "==> Installing ai-frame (settings UI) dependencies ..."

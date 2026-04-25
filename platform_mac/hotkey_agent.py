@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import signal
 import sys
 import threading
 import time
@@ -22,11 +23,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
-from PyObjCTools import AppHelper
 
 _DEFAULT_HOTKEY_PING_PORT = 18447
 _HOTKEY_SETTINGS_POLL_FALLBACK_SEC = 30.0
+_DEBUG_LOG_PATH = "/Users/chee/zapier ai project/.cursor/debug-55f014.log"
+_DEBUG_SESSION_ID = "55f014"
 
 # Repo root (parent of platform_mac/)
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,6 +37,30 @@ if str(ROOT) not in sys.path:
 from core.hotkey_chord import normalize_chord
 
 _LOG = logging.getLogger("hotkey_agent")
+
+
+def _debug_emit(
+    *,
+    run_id: str,
+    hypothesis_id: str,
+    location: str,
+    message: str,
+    data: dict[str, Any],
+) -> None:
+    payload = {
+        "sessionId": _DEBUG_SESSION_ID,
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    except OSError:
+        pass
 
 
 def _users_dir() -> Path:
@@ -97,11 +122,73 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
+    try:
+        log_path = ROOT / "logs" / "hotkey-agent.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        abs_log = str(log_path.resolve())
+        have_file = any(
+            isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", "") == abs_log
+            for h in _LOG.handlers
+        )
+        if not have_file:
+            fh = logging.FileHandler(abs_log, encoding="utf-8")
+            fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+            _LOG.addHandler(fh)
+        _LOG.setLevel(logging.INFO)
+    except OSError:
+        _LOG.exception("Could not attach file logger for hotkey agent")
     if sys.platform != "darwin":
         _LOG.error("hotkey_agent is only supported on macOS in this build.")
         sys.exit(1)
+    run_id = f"hotkey-agent-{os.getpid()}-{int(time.time())}"
+    prev_sig_handlers: dict[int, Any] = {}
 
-    from platform_mac.carbon_hotkeys import CarbonHotkeyController
+    def _signal_debug(signum: int, _frame: Any) -> None:
+        # region agent log
+        _debug_emit(
+            run_id=run_id,
+            hypothesis_id="H1",
+            location="platform_mac/hotkey_agent.py:signal",
+            message="signal received",
+            data={"signum": signum},
+        )
+        # endregion
+        prev = prev_sig_handlers.get(signum)
+        if callable(prev):
+            prev(signum, _frame)
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        prev_sig_handlers[sig] = signal.getsignal(sig)
+        # region agent log
+        _debug_emit(
+            run_id=run_id,
+            hypothesis_id="H1",
+            location="platform_mac/hotkey_agent.py:signal",
+            message="install signal handler",
+            data={"signum": sig, "prev": str(prev_sig_handlers[sig])},
+        )
+        # endregion
+        signal.signal(sig, _signal_debug)
+    # region agent log
+    _debug_emit(
+        run_id=run_id,
+        hypothesis_id="H1",
+        location="platform_mac/hotkey_agent.py:main:entry",
+        message="hotkey agent starting",
+        data={
+            "pid": os.getpid(),
+            "thread": threading.current_thread().name,
+            "is_main_thread": threading.current_thread() is threading.main_thread(),
+        },
+    )
+    # endregion
+
+    quick_flag = os.environ.get("VOICE_DICTATION_USE_QUICKMACHOTKEY", "").strip().lower()
+    use_quick = quick_flag not in {"0", "false", "no"}
+    if use_quick:
+        from platform_mac.quickmachotkey_hotkeys import QuickMachHotkeyController
+    else:
+        from platform_mac.carbon_hotkeys import CarbonHotkeyController
 
     port = int(os.environ.get("VOICE_DICTATION_PORT", "8000"))
     username = _resolve_username()
@@ -111,7 +198,25 @@ def main() -> None:
             "hotkey in Preferences while logged in (writes ai-frame/users/.hotkey_agent_target_username), "
             "or use a single local account."
         )
+        # region agent log
+        _debug_emit(
+            run_id=run_id,
+            hypothesis_id="H1",
+            location="platform_mac/hotkey_agent.py:main:no-user",
+            message="aborted before event loop",
+            data={"pid": os.getpid(), "reason": "no_username"},
+        )
+        # endregion
         sys.exit(1)
+    # region agent log
+    _debug_emit(
+        run_id=run_id,
+        hypothesis_id="H1",
+        location="platform_mac/hotkey_agent.py:main:username",
+        message="resolved username",
+        data={"username": username},
+    )
+    # endregion
 
     base_url = f"http://127.0.0.1:{port}"
     toggle_url = f"{base_url}/api/dictation/hotkey/toggle"
@@ -216,6 +321,15 @@ def main() -> None:
                     headers={"X-Voice-Dictation-Secret": sec},
                     json={"username": username},
                 )
+            # region agent log
+            _debug_emit(
+                run_id=run_id,
+                hypothesis_id="H3",
+                location="platform_mac/hotkey_agent.py:_post_toggle",
+                message="toggle HTTP response",
+                data={"status": r.status_code},
+            )
+            # endregion
             if r.status_code >= 400:
                 msg = r.text[:500] if r.text else ""
                 if r.status_code == 403:
@@ -244,10 +358,30 @@ def main() -> None:
 
     def _fire_toggle() -> None:
         _LOG.info("Global hotkey matched: toggle chord (starting request thread)")
+        print("[HOTKEY] toggle detected", flush=True)
+        # region agent log
+        _debug_emit(
+            run_id=run_id,
+            hypothesis_id="H2",
+            location="platform_mac/hotkey_agent.py:_fire_toggle",
+            message="hotkey callback reached toggle bridge",
+            data={"thread": threading.current_thread().name},
+        )
+        # endregion
         threading.Thread(target=_post_toggle, daemon=True).start()
 
     def _fire_cancel() -> None:
         _LOG.info("Global hotkey matched: cancel chord (starting request thread)")
+        print("[HOTKEY] cancel detected", flush=True)
+        # region agent log
+        _debug_emit(
+            run_id=run_id,
+            hypothesis_id="H2",
+            location="platform_mac/hotkey_agent.py:_fire_cancel",
+            message="hotkey callback reached cancel bridge",
+            data={"thread": threading.current_thread().name},
+        )
+        # endregion
         threading.Thread(target=_post_cancel, daemon=True).start()
 
     settings_path = _users_dir() / username / "settings.json"
@@ -258,29 +392,129 @@ def main() -> None:
         port,
         base_url,
     )
+    # region agent log
+    _debug_emit(
+        run_id=run_id,
+        hypothesis_id="H1",
+        location="platform_mac/hotkey_agent.py:main:startup",
+        message="resolved endpoints",
+        data={"port": port, "toggle_url": toggle_url, "cancel_url": cancel_url},
+    )
+    # endregion
     _LOG.info("Using settings: %s", settings_path)
     _LOG.info("Secret file: %s (exists=%s)", secret_path, secret_path.exists())
 
-    carbon = CarbonHotkeyController()
+    if use_quick:
+        carbon = QuickMachHotkeyController()
+    else:
+        carbon = CarbonHotkeyController()
     try:
         carbon.initialize()
     except Exception:
         _LOG.exception("Carbon hotkey controller failed to initialize")
+        # region agent log
+        _debug_emit(
+            run_id=run_id,
+            hypothesis_id="H1",
+            location="platform_mac/hotkey_agent.py:main:init-failed",
+            message="carbon initialize failed",
+            data={"pid": os.getpid()},
+        )
+        # endregion
         sys.exit(1)
 
     _start_ping_server()
-    # Match known-working daemon pattern: keep a Cocoa app/event loop alive
-    # so Carbon hotkey callbacks are delivered reliably.
-    app = NSApplication.sharedApplication()
-    app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
 
     def _noop() -> None:
         return None
 
     last_fallback_poll_at = 0.0
+    loop_counter = 0
 
-    def _tick() -> None:
-        nonlocal last_applied_mtime, last_fallback_poll_at
+    def _apply_hotkeys_once() -> None:
+        toggle_c, cancel_c, secret, mtime = _load_user_chords_and_secret(username)
+        can_bind = bool(secret) and (bool(toggle_c) or bool(cancel_c))
+        # region agent log
+        _debug_emit(
+            run_id=run_id,
+            hypothesis_id="H4",
+            location="platform_mac/hotkey_agent.py:main:rebind",
+            message="rebind decision",
+            data={
+                "can_bind": can_bind,
+                "has_toggle": bool(toggle_c),
+                "has_cancel": bool(cancel_c),
+                "has_secret": bool(secret),
+                "mtime": mtime,
+            },
+        )
+        # endregion
+        if can_bind:
+            _LOG.info(
+                "Applying %s global hotkeys (toggle=%s cancel=%s)",
+                "QuickMachHotkey" if use_quick else "Carbon",
+                toggle_c is not None,
+                cancel_c is not None,
+            )
+            carbon.set_hotkeys(
+                toggle_chord=toggle_c,
+                cancel_chord=cancel_c,
+                on_toggle=_fire_toggle,
+                on_cancel=_fire_cancel,
+            )
+        else:
+            _LOG.info("Clearing %s hotkeys (missing secret or no chords configured)", "QuickMachHotkey" if use_quick else "Carbon")
+            carbon.set_hotkeys(
+                toggle_chord=None,
+                cancel_chord=None,
+                on_toggle=_noop,
+                on_cancel=_noop,
+            )
+        return mtime
+
+    if use_quick:
+        last_applied_mtime = _apply_hotkeys_once()
+        _LOG.info("QuickMachHotkey mode: hotkeys apply once; restart to rebind.")
+        # region agent log
+        _debug_emit(
+            run_id=run_id,
+            hypothesis_id="H1",
+            location="platform_mac/hotkey_agent.py:main:quickmachotkey",
+            message="quickmachotkey enabled",
+            data={"env_value": quick_flag},
+        )
+        # endregion
+        # region agent log
+        _debug_emit(
+            run_id=run_id,
+            hypothesis_id="H1",
+            location="platform_mac/hotkey_agent.py:main:quickmachotkey",
+            message="entering AppHelper.runEventLoop",
+            data={},
+        )
+        # endregion
+        carbon.run_event_loop()
+        return
+
+    while True:
+        # Pump Carbon events on this thread (embedded runtime runs in its own thread).
+        carbon.pump_events(0.05)
+        loop_counter += 1
+        if loop_counter % 40 == 0:
+            # region agent log
+            _debug_emit(
+                run_id=run_id,
+                hypothesis_id="H1",
+                location="platform_mac/hotkey_agent.py:main:loop",
+                message="loop heartbeat",
+                data={
+                    "loop_counter": loop_counter,
+                    "thread": threading.current_thread().name,
+                    "reload_requested": reload_requested.is_set(),
+                    "last_applied_mtime": last_applied_mtime,
+                },
+            )
+            # endregion
         now = time.time()
         fallback_due = (now - last_fallback_poll_at) >= _HOTKEY_SETTINGS_POLL_FALLBACK_SEC
         need_refresh = reload_requested.is_set() or fallback_due or last_applied_mtime is None
@@ -289,36 +523,8 @@ def main() -> None:
         if reload_requested.is_set():
             reload_requested.clear()
         if need_refresh:
-            toggle_c, cancel_c, secret, mtime = _load_user_chords_and_secret(username)
-            can_bind = bool(secret) and (bool(toggle_c) or bool(cancel_c))
-
-            need_apply = last_applied_mtime is None or mtime != last_applied_mtime
-            if need_apply:
-                if can_bind:
-                    _LOG.info(
-                        "Applying Carbon global hotkeys (toggle=%s cancel=%s)",
-                        toggle_c is not None,
-                        cancel_c is not None,
-                    )
-                    carbon.set_hotkeys(
-                        toggle_chord=toggle_c,
-                        cancel_chord=cancel_c,
-                        on_toggle=_fire_toggle,
-                        on_cancel=_fire_cancel,
-                    )
-                else:
-                    _LOG.info("Clearing Carbon hotkeys (missing secret or no chords configured)")
-                    carbon.set_hotkeys(
-                        toggle_chord=None,
-                        cancel_chord=None,
-                        on_toggle=_noop,
-                        on_cancel=_noop,
-                    )
-                last_applied_mtime = mtime
-        AppHelper.callLater(0.25, _tick)
-
-    _tick()
-    AppHelper.runEventLoop()
+            mtime = _apply_hotkeys_once()
+            last_applied_mtime = mtime
 
 
 if __name__ == "__main__":

@@ -204,7 +204,7 @@ function setupEventListeners() {
                 } else if (result.skipped_empty) {
                     dictateBtn.textContent = 'No speech detected';
                 } else {
-                    await refreshDictationLastContext();
+                    await refreshDictationLastContext({ resetToLatest: true });
                     dictateBtn.textContent = 'Done';
                 }
                 setTimeout(() => {

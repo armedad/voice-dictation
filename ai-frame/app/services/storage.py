@@ -294,14 +294,13 @@ class UserDataStore:
         path.write_text(token + "\n", encoding="utf-8")
         return token
 
+    DICTATION_HISTORY_MAX_ENTRIES = 300
+
     def dictation_last_llm_path(self) -> Path:
         return self.data_dir / "dictation_last_llm.json"
 
-    def save_dictation_last_llm_snapshot(self, snapshot: dict) -> None:
-        """Persist last dictation LLM request/response for the Context tab."""
-        self.ensure_dirs()
-        with open(self.dictation_last_llm_path(), "w", encoding="utf-8") as f:
-            json.dump(snapshot, f, indent=2, ensure_ascii=False)
+    def dictation_history_path(self) -> Path:
+        return self.data_dir / "dictation_history.json"
 
     def load_dictation_last_llm_snapshot(self) -> dict:
         """Load last dictation LLM snapshot, or {} if missing/unreadable."""
@@ -315,6 +314,44 @@ class UserDataStore:
             return data if isinstance(data, dict) else {}
         except (json.JSONDecodeError, OSError):
             return {}
+
+    def load_dictation_history_entries(self) -> list[dict]:
+        """Ordered oldest → newest; each item is a snapshot dict (same shape as last-file)."""
+        self.ensure_dirs()
+        hp = self.dictation_history_path()
+        if hp.exists():
+            try:
+                raw = json.loads(hp.read_text(encoding="utf-8"))
+                if isinstance(raw, list):
+                    return [e for e in raw if isinstance(e, dict)]
+                if isinstance(raw, dict):
+                    entries = raw.get("entries")
+                    if isinstance(entries, list):
+                        return [e for e in entries if isinstance(e, dict)]
+            except (json.JSONDecodeError, OSError):
+                pass
+        snap = self.load_dictation_last_llm_snapshot()
+        return [snap] if snap else []
+
+    def save_dictation_last_llm_snapshot(self, snapshot: dict) -> None:
+        """Append to rolling history and mirror latest to dictation_last_llm.json."""
+        self.ensure_dirs()
+        entries = self.load_dictation_history_entries()
+        entries.append(dict(snapshot))
+        cap = self.DICTATION_HISTORY_MAX_ENTRIES
+        if len(entries) > cap:
+            entries = entries[-cap:]
+        hist_path = self.dictation_history_path()
+        try:
+            with open(hist_path, "w", encoding="utf-8") as f:
+                json.dump({"entries": entries}, f, indent=2, ensure_ascii=False)
+        except OSError:
+            pass
+        try:
+            with open(self.dictation_last_llm_path(), "w", encoding="utf-8") as f:
+                json.dump(snapshot, f, indent=2, ensure_ascii=False)
+        except OSError:
+            pass
     
     # --- Notifications ---
     

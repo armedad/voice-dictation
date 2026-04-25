@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.routers.models import get_user_store
@@ -131,25 +131,49 @@ async def dictation_prompt_defaults(request: Request) -> dict[str, str]:
 
 
 @router.get("/dictation/last-context")
-async def dictation_last_context(request: Request) -> dict[str, Any]:
-    """Last dictation LLM snapshot and verbatim bundle for the Context tab."""
+async def dictation_last_context(
+    request: Request,
+    index: int | None = Query(
+        default=None,
+        description="0-based index into saved dictations (oldest=0). Omit for newest.",
+    ),
+) -> dict[str, Any]:
+    """Dictation LLM snapshot(s) for the Context tab; optional index browses history."""
     if not request.cookies.get("aiframe_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
     store = get_user_store(request)
-    snap = store.load_dictation_last_llm_snapshot()
-    if not snap:
+    entries = store.load_dictation_history_entries()
+    total = len(entries)
+    last_ts: str | None = None
+    if total:
+        last_ts = (entries[-1].get("timestamp") or None) if isinstance(entries[-1], dict) else None
+
+    if total == 0:
         return {
             "snapshot": {},
             "verbatim_request": "",
             "response_text_full": "",
+            "history_index": None,
+            "history_total": 0,
+            "last_dictation_timestamp": None,
+            "current_timestamp": None,
         }
+
+    resolved = total - 1 if index is None else index
+    resolved = max(0, min(resolved, total - 1))
+    snap = entries[resolved]
     sys_full = snap.get("system_prompt_full") or ""
     user_msg = snap.get("user_message") or ""
     response = snap.get("response_text_full") or ""
+    cur_ts = snap.get("timestamp") or None
     return {
         "snapshot": snap,
         "verbatim_request": _format_verbatim_llm_request(sys_full, user_msg),
         "response_text_full": response,
+        "history_index": resolved,
+        "history_total": total,
+        "last_dictation_timestamp": last_ts,
+        "current_timestamp": cur_ts,
     }
 
 

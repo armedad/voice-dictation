@@ -1,4 +1,5 @@
 """FastAPI application for ai-frame - LLM App Skeleton Framework."""
+from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse

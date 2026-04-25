@@ -70,11 +70,12 @@ if "%RECREATE_VENV%"=="1" if exist .venv (
 
 if not exist .venv (
   echo ==^> Creating venv .venv ...
-  py -3.12 -m venv .venv 2>nul
+  py -3.13 -m venv .venv 2>nul
+  if not exist .venv\Scripts\python.exe py -3.12 -m venv .venv 2>nul
   if not exist .venv\Scripts\python.exe py -3.11 -m venv .venv 2>nul
   if not exist .venv\Scripts\python.exe python -m venv .venv
   if not exist .venv\Scripts\python.exe (
-    echo error: could not create .venv. Try: py -3.12 -m venv .venv
+    echo error: could not create .venv. Try: py -3.13 -m venv .venv
     exit /b 1
   )
 ) else (
@@ -93,6 +94,12 @@ echo ==^> Installing agent dependencies (requirements-agent.txt^) ...
 echo     (includes PyObjC for macOS Carbon hotkeys when you use this tree on Mac; Windows skips unused wheels^)
 python -m pip install -r requirements-agent.txt
 if errorlevel 1 exit /b 1
+python -c "import importlib; raise SystemExit(0 if importlib.util.find_spec('quickmachotkey') else 1)" >nul 2>&1
+if errorlevel 1 (
+  echo ==^> Installing quickmachotkey ^(missing from environment^) ...
+  python -m pip install quickmachotkey
+  if errorlevel 1 exit /b 1
+)
 
 if not "%SKIP_AI_FRAME%"=="1" (
   echo ==^> Installing ai-frame (settings UI^) dependencies ...
