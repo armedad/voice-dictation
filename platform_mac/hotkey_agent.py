@@ -309,11 +309,21 @@ def main() -> None:
 
     def _post_toggle() -> None:
         _LOG.info("Hotkey toggle: HTTP thread started for user=%r", username)
+        # region agent log
+        _debug_emit(
+            run_id=run_id,
+            hypothesis_id="H_DELAY",
+            location="platform_mac/hotkey_agent.py:_post_toggle",
+            message="hotkey POST thread start",
+            data={"user": username},
+        )
+        # endregion
         _, _, sec, _ = _load_user_chords_and_secret(username)
         if not sec:
             _LOG.warning("toggle: missing hotkey_local_secret.txt")
             return
         try:
+            t0 = time.time()
             with httpx.Client(timeout=120.0) as client:
                 _LOG.info("Hotkey toggle: POST %s", toggle_url)
                 r = client.post(
@@ -321,6 +331,15 @@ def main() -> None:
                     headers={"X-Voice-Dictation-Secret": sec},
                     json={"username": username},
                 )
+            # region agent log
+            _debug_emit(
+                run_id=run_id,
+                hypothesis_id="H_DELAY",
+                location="platform_mac/hotkey_agent.py:_post_toggle",
+                message="hotkey POST response",
+                data={"status": r.status_code, "elapsed_ms": int((time.time() - t0) * 1000)},
+            )
+            # endregion
             # region agent log
             _debug_emit(
                 run_id=run_id,

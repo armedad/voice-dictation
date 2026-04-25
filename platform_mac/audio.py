@@ -3,9 +3,33 @@ from __future__ import annotations
 import io
 import threading
 import wave
+import time
+import json
 
 import numpy as np
 import sounddevice as sd
+
+_DEBUG_LOG_PATH = "/Users/chee/zapier ai project/.cursor/debug-55f014.log"
+_DEBUG_SESSION_ID = "55f014"
+
+
+def _debug_emit(location: str, message: str, data: dict) -> None:
+    # region agent log
+    payload = {
+        "sessionId": _DEBUG_SESSION_ID,
+        "runId": "dictation-latency",
+        "hypothesisId": "H_AUDIO",
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    except OSError:
+        pass
+    # endregion
 
 
 def record_wav_bytes(duration_s: float, sample_rate: int = 16000) -> bytes:
@@ -56,13 +80,24 @@ def record_wav_bytes_interruptible(
         dtype="float32",
         blocksize=block_frames,
     ) as stream:
+        _debug_emit(
+            "platform_mac/audio.py:record_wav_bytes_interruptible",
+            "input stream opened",
+            {"sample_rate": sample_rate, "block_frames": block_frames},
+        )
         while n_target is None or n_read < n_target:
             if cancel_event.is_set():
                 return b"", True, False
             if stop_event is not None and stop_event.is_set():
                 break
+            t0 = time.time()
             need = block_frames if n_target is None else min(block_frames, n_target - n_read)
             data, _overflowed = stream.read(need)
+            _debug_emit(
+                "platform_mac/audio.py:record_wav_bytes_interruptible",
+                "stream read",
+                {"frames": len(data) if data is not None else 0, "elapsed_ms": int((time.time() - t0) * 1000)},
+            )
             if data is None or len(data) == 0:
                 continue
             arr = np.asarray(data, dtype=np.float32)

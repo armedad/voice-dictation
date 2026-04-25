@@ -6,7 +6,7 @@
 #   ./start.sh --port 8765          # override port (or env VOICE_DICTATION_PORT)
 #   ./start.sh --no-reload
 #   ./start.sh --skip-ollama-ensure  # do not check/start Ollama
-#   ./start.sh --skip-hotkey-agent   # disable embedded macOS hotkey runtime
+#   ./start.sh --skip-hotkey-agent   # API only on main thread (no global hotkeys; --reload ok)
 #   ./start.sh --help
 #
 # Ollama: if http://127.0.0.1:11434/api/tags is unreachable and `ollama` is on PATH,
@@ -103,7 +103,7 @@ fi
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Voice Dictation MVP — settings + dictation API (one server)"
+echo "  Voice Dictation MVP — settings + dictation API (single Python process on macOS)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "  Activate this venv in another terminal (for run_agent.py / pip):"
@@ -123,10 +123,8 @@ echo "  Ollama logs (if started by this script): $ROOT/logs/ollama-serve.log"
 echo ""
 echo "  Mic capture needs PortAudio on macOS (install.sh installs via brew when possible)."
 echo ""
-echo "  Global dictation hotkeys (macOS): combined one-process launcher."
-echo "    run_combined_app.py keeps hotkeys on the process main thread and uvicorn in a"
-echo "    background thread. Logs still go to logs/hotkey-agent.log."
-echo "    Disable embedded hotkeys with: ./start.sh --skip-hotkey-agent"
+echo "  macOS: always run_combined_app.py (uvicorn + hotkeys in one process, or API-only with"
+echo "    --skip-hotkey-agent). Logs: logs/hotkey-agent.log when hotkeys are enabled."
 echo ""
 echo "  Press Ctrl+C in this terminal to stop the FastAPI server (background Ollama keeps running)."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -161,22 +159,26 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
   fi
 fi
 
-cd "$ROOT/ai-frame"
+COMBINED_ARGS=(--port "$PORT")
 if [[ "$SKIP_HOTKEY_AGENT" == true ]]; then
-  exec env \
-    VOICE_DICTATION_PORT="$PORT" \
-    VOICE_DICTATION_DISABLE_EMBEDDED_HOTKEY_AGENT=1 \
-    "$VENV_PY" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" "${RELOAD_ARGS[@]}"
+  COMBINED_ARGS+=(--skip-hotkey-agent)
+  if [[ ${#RELOAD_ARGS[@]} -gt 0 ]]; then
+    COMBINED_ARGS+=(--reload)
+  fi
 elif [[ "$(uname -s)" == "Darwin" ]]; then
   if [[ ${#RELOAD_ARGS[@]} -gt 0 ]]; then
-    echo "warning: --reload disabled in combined mode (hotkeys require main-thread runtime)." >&2
+    echo "warning: --reload disabled when global hotkeys are enabled (main-thread runtime)." >&2
   fi
+fi
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
   exec env \
     VOICE_DICTATION_PORT="$PORT" \
     VOICE_DICTATION_USE_QUICKMACHOTKEY="${VOICE_DICTATION_USE_QUICKMACHOTKEY:-}" \
-    "$VENV_PY" "$ROOT/run_combined_app.py" --port "$PORT"
-else
-  exec env \
-    VOICE_DICTATION_PORT="$PORT" \
-    "$VENV_PY" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" "${RELOAD_ARGS[@]}"
+    "$VENV_PY" "$ROOT/run_combined_app.py" "${COMBINED_ARGS[@]}"
 fi
+
+cd "$ROOT/ai-frame"
+exec env \
+  VOICE_DICTATION_PORT="$PORT" \
+  "$VENV_PY" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" "${RELOAD_ARGS[@]}"

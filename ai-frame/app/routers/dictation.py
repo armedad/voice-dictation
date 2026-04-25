@@ -23,10 +23,34 @@ from app.services.dictation_cleanup import (
     resolve_transcription_endpoint,
 )
 from app.services.storage import UserDataStore
+from app.services.dictation_events import publish_event
+
+_DEBUG_LOG_PATH = "/Users/chee/zapier ai project/.cursor/debug-55f014.log"
+_DEBUG_SESSION_ID = "55f014"
+
+
+def _debug_emit(location: str, message: str, data: dict[str, Any]) -> None:
+    # region agent log
+    payload = {
+        "sessionId": _DEBUG_SESSION_ID,
+        "runId": "dictation-sse",
+        "hypothesisId": "H_DELAY",
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    except OSError:
+        pass
+    # endregion
 
 router = APIRouter(tags=["dictation"])
 
 RECORD_SECONDS = 10.0
+_DICTATION_CONSOLE_INTERVAL_SEC = 3.0
 
 # Repo root (parent of ai-frame/): same layout as app.main.VOICE_DICTATION_ROOT
 _VOICE_DICTATION_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -84,6 +108,29 @@ def _set_dictation_cancel() -> None:
 
 def _set_dictation_stop() -> None:
     _dictation_stop.set()
+
+
+async def _dictation_console_heartbeat(stop: asyncio.Event) -> None:
+    """Print ``dictating`` every ``_DICTATION_CONSOLE_INTERVAL_SEC`` until ``stop`` is set."""
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=_DICTATION_CONSOLE_INTERVAL_SEC)
+            return
+        except asyncio.TimeoutError:
+            print("dictating", flush=True)
+
+
+def _emit_overlap(store: UserDataStore, source: str) -> None:
+    _dictation_server_log(
+        "dictation overlap detected",
+        {"source": source, "user": store.username},
+    )
+    publish_event(store.username, "dictation_overlap", {"source": source})
+    _debug_emit(
+        "app/routers/dictation.py:overlap",
+        "dictation overlap detected",
+        {"source": source, "user": store.username},
+    )
 
 
 def _require_loopback(request: Request) -> None:
@@ -232,96 +279,124 @@ async def _execute_dictation(
         settings.dictation_vocabulary
     )
 
+    _debug_emit(
+        "app/routers/dictation.py:_execute_dictation",
+        "record start enter",
+        {"source": source, "user": store.username},
+    )
     _dictation_server_log(
         "dictation record start",
         {"source": source, "user": store.username, "seconds": RECORD_SECONDS},
     )
+    publish_event(store.username, "dictation_start", {"source": source})
     cancel_event.clear()
     _dictation_stop.clear()
+    print("start dictating", flush=True)
+    console_stop = asyncio.Event()
+    hb_task = asyncio.create_task(_dictation_console_heartbeat(console_stop))
     try:
-        wav, cancelled, stopped = await asyncio.to_thread(
-            record_wav_bytes_interruptible,
-            None,
-            cancel_event,
-            stop_event=_dictation_stop,
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Microphone capture failed: {e!s}. Check mic permission and PortAudio.",
-        ) from e
+        try:
+            wav, cancelled, stopped = await asyncio.to_thread(
+                record_wav_bytes_interruptible,
+                None,
+                cancel_event,
+                stop_event=_dictation_stop,
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Microphone capture failed: {e!s}. Check mic permission and PortAudio.",
+            ) from e
 
-    if cancelled or not wav:
+        if cancelled or not wav:
+            _debug_emit(
+                "app/routers/dictation.py:_execute_dictation",
+                "record cancelled or empty",
+                {"source": source, "user": store.username, "cancelled": cancelled},
+            )
+            _dictation_server_log(
+                "dictation record cancelled or empty",
+                {"source": source, "user": store.username, "cancelled": cancelled},
+            )
+            publish_event(store.username, "dictation_cancelled", {"source": source})
+            return {"ok": False, "cancelled": True, "text": ""}
+
+        if stopped:
+            _debug_emit(
+                "app/routers/dictation.py:_execute_dictation",
+                "record stop event",
+                {"source": source, "user": store.username},
+            )
+            _dictation_server_log(
+                "dictation record stopped",
+                {"source": source, "user": store.username, "seconds": "toggle_stop"},
+            )
+            publish_event(store.username, "dictation_stop", {"source": source})
+
+        capture_audit: dict[str, Any] = {}
+        try:
+            text = await run_pipeline(
+                wav,
+                "dictation.wav",
+                transcription_endpoint=trans_ep,
+                cleanup_endpoint=clean_ep,
+                cleanup_openai_api_key=openai_key,
+                cleanup_system_prompt=cleanup_system_prompt,
+                skip_llm_cleanup=not llm_cleanup,
+                transcription_initial_prompt=stt_vocab_hint,
+                capture_audit=capture_audit,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Transcription or cleanup failed: {e!s}",
+            ) from e
+
+        text_out = (text or "").strip()
+        if not text_out:
+            raw_tr = (capture_audit.get("raw_transcript") or "").strip()
+            _dictation_server_log(
+                "dictation skipped empty transcript",
+                {"source": source, "user": store.username, "raw_len": len(raw_tr)},
+            )
+            publish_event(store.username, "dictation_empty", {"source": source})
+            return {"ok": True, "cancelled": False, "text": "", "skipped_empty": True}
+
+        raw_tr = capture_audit.get("raw_transcript", "")
+        snapshot = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "system_prompt_full": cleanup_system_prompt or "",
+            "user_message": raw_tr,
+            "response_text_full": text_out,
+            "llm_cleanup_enabled": llm_cleanup,
+            "cleanup_provider": getattr(clean_ep, "provider", None) if clean_ep else None,
+            "cleanup_model": getattr(clean_ep, "model_name", None) if clean_ep else None,
+            "cleanup_base_url": (clean_ep.baseURL if clean_ep else "") or "",
+        }
+        store.save_dictation_last_llm_snapshot(snapshot)
+
         _dictation_server_log(
-            "dictation record cancelled or empty",
-            {"source": source, "user": store.username, "cancelled": cancelled},
+            "dictation pipeline ok before type",
+            {"source": source, "user": store.username, "text_len": len(text_out)},
         )
-        return {"ok": False, "cancelled": True, "text": ""}
+        try:
+            await asyncio.to_thread(type_text_strict, text_out)
+        except TypingInjectionError as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Synthetic typing failed: {e!s}",
+            ) from e
 
-    if stopped:
-        _dictation_server_log(
-            "dictation record stopped",
-            {"source": source, "user": store.username, "seconds": "toggle_stop"},
-        )
-
-    capture_audit: dict[str, Any] = {}
-    try:
-        text = await run_pipeline(
-            wav,
-            "dictation.wav",
-            transcription_endpoint=trans_ep,
-            cleanup_endpoint=clean_ep,
-            cleanup_openai_api_key=openai_key,
-            cleanup_system_prompt=cleanup_system_prompt,
-            skip_llm_cleanup=not llm_cleanup,
-            transcription_initial_prompt=stt_vocab_hint,
-            capture_audit=capture_audit,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Transcription or cleanup failed: {e!s}",
-        ) from e
-
-    text_out = (text or "").strip()
-    if not text_out:
-        raw_tr = (capture_audit.get("raw_transcript") or "").strip()
-        _dictation_server_log(
-            "dictation skipped empty transcript",
-            {"source": source, "user": store.username, "raw_len": len(raw_tr)},
-        )
-        return {"ok": True, "cancelled": False, "text": "", "skipped_empty": True}
-
-    raw_tr = capture_audit.get("raw_transcript", "")
-    snapshot = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "system_prompt_full": cleanup_system_prompt or "",
-        "user_message": raw_tr,
-        "response_text_full": text_out,
-        "llm_cleanup_enabled": llm_cleanup,
-        "cleanup_provider": getattr(clean_ep, "provider", None) if clean_ep else None,
-        "cleanup_model": getattr(clean_ep, "model_name", None) if clean_ep else None,
-        "cleanup_base_url": (clean_ep.baseURL if clean_ep else "") or "",
-    }
-    store.save_dictation_last_llm_snapshot(snapshot)
-
-    _dictation_server_log(
-        "dictation pipeline ok before type",
-        {"source": source, "user": store.username, "text_len": len(text_out)},
-    )
-    try:
-        await asyncio.to_thread(type_text_strict, text_out)
-    except TypingInjectionError as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Synthetic typing failed: {e!s}",
-        ) from e
-
-    return {"ok": True, "cancelled": False, "text": text_out}
+        publish_event(store.username, "dictation_done", {"source": source})
+        return {"ok": True, "cancelled": False, "text": text_out}
+    finally:
+        console_stop.set()
+        await hb_task
+        print("stop dictating", flush=True)
 
 
 @router.post("/dictation/record-and-type")
@@ -335,7 +410,20 @@ async def record_and_type(request: Request) -> dict[str, Any]:
 
     store = get_user_store(request)
     global _dictation_active
+    lock_start = time.time()
+    _debug_emit(
+        "app/routers/dictation.py:record_and_type",
+        "record_and_type entry",
+        {"user": store.username, "active": _dictation_active},
+    )
+    if _dictation_active:
+        _emit_overlap(store, "record_and_type")
     async with _dictation_session_lock:
+        _debug_emit(
+            "app/routers/dictation.py:record_and_type",
+            "record_and_type lock acquired",
+            {"wait_ms": int((time.time() - lock_start) * 1000), "user": store.username},
+        )
         _dictation_active = True
         out = await _execute_dictation(
             store, cancel_event=_dictation_cancel, source="record_and_type"
@@ -437,6 +525,9 @@ async def dictation_hotkey_cancel(request: Request) -> dict[str, Any]:
     )
     _set_dictation_cancel()
     _set_dictation_stop()
+    session_user = request.cookies.get("aiframe_session") or ""
+    if session_user:
+        publish_event(session_user, "dictation_cancel_signal", {})
     return {"ok": True}
 
 
@@ -449,6 +540,7 @@ async def dictation_hotkey_toggle(
     Start dictation for ``body.username`` using ``X-Voice-Dictation-Secret`` and per-user
     ``hotkey_local_secret.txt``. Loopback-only.
     """
+    global _dictation_active
     _require_loopback(request)
     secret_hdr = request.headers.get("x-voice-dictation-secret")
     if not secret_hdr or not secret_hdr.strip():
@@ -468,16 +560,27 @@ async def dictation_hotkey_toggle(
     if not settings.dictation_hotkey_toggle:
         raise HTTPException(status_code=400, detail="No dictation toggle hotkey configured")
 
+    _debug_emit(
+        "app/routers/dictation.py:hotkey_toggle",
+        "hotkey toggle entry",
+        {"user": body.username, "active": _dictation_active},
+    )
     _dictation_server_log(
         "dictation hotkey toggle accepted",
         {"user": body.username, "client": request.client.host if request.client else None},
     )
-    global _dictation_active
     if _dictation_active:
         _dictation_server_log("dictation hotkey toggle -> stop active session", {"user": body.username})
         _set_dictation_stop()
+        publish_event(store.username, "dictation_stop", {"source": "hotkey_toggle"})
         return {"ok": True, "stopped": True}
+    lock_start = time.time()
     async with _dictation_session_lock:
+        _debug_emit(
+            "app/routers/dictation.py:hotkey_toggle",
+            "hotkey toggle lock acquired",
+            {"wait_ms": int((time.time() - lock_start) * 1000), "user": body.username},
+        )
         _dictation_active = True
         out = await _execute_dictation(
             store, cancel_event=_dictation_cancel, source="hotkey_toggle"

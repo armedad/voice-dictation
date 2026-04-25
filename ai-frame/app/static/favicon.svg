@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Microphone">
+  <rect width="32" height="32" rx="7" fill="#2563eb"/>
+  <g fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="translate(4 4)">
+    <path d="M12 3a2.5 2.5 0 0 0-2.5 2.5v5.5a2.5 2.5 0 0 0 5 0V5.5A2.5 2.5 0 0 0 12 3Z"/>
+    <path d="M18.5 9.5V11a6.5 6.5 0 0 1-13 0V9.5"/>
+    <line x1="12" y1="18" x2="12" y2="21"/>
+    <line x1="9" y1="21" x2="15" y2="21"/>
+  </g>
+</svg>

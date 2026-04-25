@@ -7,7 +7,8 @@ import { api } from './api.js';
 import { checkAuth, login, register, logout, hasUsers } from './auth.js';
 import { loadSettings, loadModels, loadSpeechModels, initSettings } from './settings.js';
 import { initChat, createConversation } from './chat.js';
-import { initNotifications, startNotificationPolling, stopNotificationPolling } from './notifications.js';
+import { initNotifications, startNotificationStream, stopNotificationStream } from './notifications.js';
+import { startDictationEvents, stopDictationEvents } from './dictation-events.js';
 import {
     initContextTab,
     refreshDictationLastContext,
@@ -29,7 +30,8 @@ const state = {
 function showLoginScreen() {
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('app').style.display = 'none';
-    stopNotificationPolling();
+    stopNotificationStream();
+    stopDictationEvents();
 }
 
 /**
@@ -38,7 +40,8 @@ function showLoginScreen() {
 function showApp() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
-    startNotificationPolling();
+    startNotificationStream();
+    startDictationEvents();
 }
 
 /**
