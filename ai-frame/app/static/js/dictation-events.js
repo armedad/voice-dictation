@@ -3,6 +3,7 @@
  */
 
 import { debugLog, debugWarn } from './debug-flags.js';
+import { refreshDictationLastContext } from './context-tab.js';
 
 let sse = null;
 
@@ -63,6 +64,11 @@ export function startDictationEvents() {
                     break;
                 case 'dictation_overlap':
                     alert('Dictation overlap detected. A recording was already active.');
+                    break;
+                case 'dictation_context_updated':
+                    refreshDictationLastContext({ resetToLatest: true }).catch((e) =>
+                        debugWarn('DICTATION', 'context refresh after SSE failed', e)
+                    );
                     break;
                 default:
                     break;
