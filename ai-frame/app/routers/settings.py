@@ -1,13 +1,46 @@
 """Settings management endpoints."""
-from fastapi import APIRouter, Request
+import os
+from typing import Any, Optional
+
+import httpx
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from typing import Optional
-from pathlib import Path
 
 from app.services import users
 from app.services.storage import UserDataStore, DEFAULT_DATA_DIR
 
 router = APIRouter(tags=["settings"])
+
+
+def _sync_hotkey_agent_target_user(store: UserDataStore, patch: dict[str, Any]) -> None:
+    """Record which account last edited hotkeys so ``run_hotkey_agent`` can default to that user."""
+    if not store.username:
+        return
+    if "dictation_hotkey_toggle" not in patch and "dictation_hotkey_cancel" not in patch:
+        return
+    users.ensure_users_dir()
+    marker = users.USERS_DIR / ".hotkey_agent_target_username"
+    marker.write_text(store.username.strip() + "\n", encoding="utf-8")
+
+
+async def _notify_hotkey_sidecar_reload(username: str) -> None:
+    """
+    Best-effort loopback notify so macOS hotkey sidecar can rebind immediately.
+    Falls back to file polling when sidecar is unreachable.
+    """
+    if not username:
+        return
+    try:
+        ping_port = int(os.environ.get("VOICE_DICTATION_HOTKEY_PING_PORT", "18447"))
+    except ValueError:
+        ping_port = 18447
+    url = f"http://127.0.0.1:{ping_port}/hotkeys/reload"
+    try:
+        async with httpx.AsyncClient(timeout=0.35) as client:
+            await client.post(url, json={"username": username})
+    except Exception:
+        # Sidecar may be down; periodic file polling in the agent remains as fallback.
+        return
 
 
 def get_user_store(request: Request) -> UserDataStore:
@@ -29,6 +62,10 @@ class UpdateSettingsRequest(BaseModel):
     dictation_llm_cleanup_enabled: Optional[bool] = None
     dictation_instructions: Optional[str] = None
     dictation_vocabulary: Optional[str] = None
+    dictation_use_default_system_prompt: Optional[bool] = None
+    dictation_custom_system_prompt_base: Optional[str] = None
+    dictation_hotkey_toggle: Optional[dict[str, Any]] = None
+    dictation_hotkey_cancel: Optional[dict[str, Any]] = None
 
 
 @router.get("/settings")
@@ -41,19 +78,27 @@ async def get_settings(request: Request):
 
 @router.patch("/settings")
 async def update_settings(request: Request, req: UpdateSettingsRequest):
-    """Update settings."""
+    """Update settings (partial PATCH: only fields present in the JSON body)."""
     store = get_user_store(request)
-    settings = store.update_settings(
-        theme=req.theme,
-        lm_studio_url=req.lm_studio_url,
-        ollama_url=req.ollama_url,
-        default_model=req.default_model,
-        default_provider=req.default_provider,
-        speech_model=req.speech_model,
-        dictation_llm_cleanup_enabled=req.dictation_llm_cleanup_enabled,
-        dictation_instructions=req.dictation_instructions,
-        dictation_vocabulary=req.dictation_vocabulary,
-    )
+    patch = req.model_dump(exclude_unset=True)
+
+    from core.hotkey_chord import parse_chord_or_raise
+
+    for field in ("dictation_hotkey_toggle", "dictation_hotkey_cancel"):
+        if field not in patch:
+            continue
+        val = patch[field]
+        if val is not None:
+            try:
+                patch[field] = parse_chord_or_raise(val)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
+            store.ensure_hotkey_secret()
+
+    settings = store.update_settings_patch(patch)
+    _sync_hotkey_agent_target_user(store, patch)
+    if "dictation_hotkey_toggle" in patch or "dictation_hotkey_cancel" in patch:
+        await _notify_hotkey_sidecar_reload(store.username or "")
     return settings.model_dump()
 
 

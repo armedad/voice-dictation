@@ -76,15 +76,23 @@ def format_vocabulary_for_whisper_initial_prompt(raw: Optional[str]) -> Optional
 def build_dictation_cleanup_system_prompt(
     user_instructions: Optional[str],
     vocabulary: Optional[str] = None,
+    *,
+    use_default_base: bool = True,
+    custom_base: Optional[str] = None,
 ) -> str:
     """
-    Merge default cleanup behavior with optional vocabulary list and user style constraints.
+    Merge base system text with optional vocabulary list and user style constraints.
 
-    Vocabulary is applied in the LLM pass (strong): prefer these spellings when they match
-    what was said. For local faster-whisper, the same list can also be passed as
-    ``initial_prompt`` (weak STT hint) from the caller.
+    When ``use_default_base`` is True, the base segment is ``DEFAULT_CLEANUP_SYSTEM_PROMPT``.
+    When False, ``custom_base`` replaces only that segment (after strip); empty custom falls
+    back to the built-in default. Vocabulary and user instructions are always appended when
+    non-empty.
     """
-    base = DEFAULT_CLEANUP_SYSTEM_PROMPT.strip()
+    if use_default_base:
+        base = DEFAULT_CLEANUP_SYSTEM_PROMPT.strip()
+    else:
+        custom = (custom_base or "").strip()
+        base = custom if custom else DEFAULT_CLEANUP_SYSTEM_PROMPT.strip()
     parts: list[str] = [base]
     voc_lines = parse_vocabulary_lines(vocabulary)
     if voc_lines:

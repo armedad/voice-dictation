@@ -6,6 +6,7 @@
 #   ./start.sh --port 8765          # override port (or env VOICE_DICTATION_PORT)
 #   ./start.sh --no-reload
 #   ./start.sh --skip-ollama-ensure  # do not check/start Ollama
+#   ./start.sh --skip-hotkey-agent   # do not spawn run_hotkey_agent.py (macOS global hotkeys)
 #   ./start.sh --help
 #
 # Ollama: if http://127.0.0.1:11434/api/tags is unreachable and `ollama` is on PATH,
@@ -19,6 +20,7 @@ cd "$ROOT"
 PORT="${VOICE_DICTATION_PORT:-8000}"
 RELOAD_ARGS=(--reload)
 SKIP_OLLAMA_ENSURE=false
+SKIP_HOTKEY_AGENT=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -35,8 +37,12 @@ while [[ $# -gt 0 ]]; do
       SKIP_OLLAMA_ENSURE=true
       shift
       ;;
+    --skip-hotkey-agent)
+      SKIP_HOTKEY_AGENT=true
+      shift
+      ;;
     -h|--help)
-      sed -n '1,28p' "$0"
+      sed -n '1,30p' "$0"
       exit 0
       ;;
     *)
@@ -117,9 +123,93 @@ echo "  Ollama logs (if started by this script): $ROOT/logs/ollama-serve.log"
 echo ""
 echo "  Mic capture needs PortAudio on macOS (install.sh installs via brew when possible)."
 echo ""
+echo "  Global dictation hotkeys (macOS): background agent logs to logs/hotkey-agent.log."
+echo "    Start via this script so the agent runs. Saving a hotkey in Preferences (while logged in)"
+echo "    writes users/.hotkey_agent_target_username; override anytime with VOICE_DICTATION_AI_FRAME_USER."
+echo "    Hotkeys use Carbon RegisterEventHotKey (system-registered shortcuts), not a global keylogger;"
+echo "    if nothing fires, read logs/hotkey-agent.log for RegisterEventHotKey errors and ensure the agent"
+echo "    user matches the account that owns the hotkey + secret files."
+echo "    Disable with: ./start.sh --skip-hotkey-agent"
+echo ""
 echo "  Press Ctrl+C in this terminal to stop the FastAPI server (background Ollama keeps running)."
+echo "  Hotkey sidecar: the next ./start.sh stops any prior agent for this repo (see logs/hotkey-agent.pid);"
+echo "    Ctrl+C may leave the old agent running until you start again or: kill \$(cat logs/hotkey-agent.pid)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
+
+stop_hotkey_agent_for_repo() {
+  local pid_file="$ROOT/logs/hotkey-agent.pid"
+  if [[ -f "$pid_file" ]]; then
+    local old_pid
+    old_pid="$(tr -d ' \n\r' <"$pid_file" || true)"
+    if [[ -n "$old_pid" ]] && kill -0 "$old_pid" 2>/dev/null; then
+      echo "==> Stopping previous hotkey agent (PID $old_pid)"
+      kill -TERM "$old_pid" 2>/dev/null || true
+      sleep 0.5
+      kill -KILL "$old_pid" 2>/dev/null || true
+    fi
+    rm -f "$pid_file"
+  fi
+  # Catch orphans (e.g. after Ctrl+C on uvicorn) that still run this repo's script path.
+  if pkill -TERM -f "${ROOT}/run_hotkey_agent.py" 2>/dev/null; then
+    echo "==> Stopped stray run_hotkey_agent.py process(es) for this repo"
+    sleep 0.3
+  fi
+}
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  mkdir -p "$ROOT/logs"
+  if [[ "$SKIP_HOTKEY_AGENT" == true ]]; then
+    stop_hotkey_agent_for_repo
+    echo "==> Skipping hotkey agent (--skip-hotkey-agent); any prior agent for this repo was stopped."
+  fi
+fi
+
+if [[ "$(uname -s)" == "Darwin" && "$SKIP_HOTKEY_AGENT" != true ]]; then
+  HOTKEY_USER="${VOICE_DICTATION_AI_FRAME_USER:-}"
+  if [[ -z "$HOTKEY_USER" ]]; then
+    HOTKEY_USER="$(
+      ROOT="$ROOT" "$VENV_PY" - <<'PY'
+import json, os
+from pathlib import Path
+
+root = Path(os.environ["ROOT"])
+users_dir = root / "ai-frame" / "users"
+marker = users_dir / ".hotkey_agent_target_username"
+if marker.exists():
+    try:
+        t = marker.read_text(encoding="utf-8").strip()
+    except OSError:
+        t = ""
+    if t and (users_dir / t).is_dir():
+        print(t, end="")
+        raise SystemExit(0)
+
+uj = users_dir / "users.json"
+d = json.loads(uj.read_text(encoding="utf-8")) if uj.exists() else {}
+names = list((d.get("users") or {}).keys())
+if len(names) == 1:
+    print(names[0], end="")
+else:
+    print("", end="")
+PY
+    )"
+  fi
+  if [[ -n "$HOTKEY_USER" ]]; then
+    stop_hotkey_agent_for_repo
+    echo "==> Starting hotkey agent in background (user=$HOTKEY_USER, log=$ROOT/logs/hotkey-agent.log)"
+    echo "    Sidecar liveness: GET http://127.0.0.1:${VOICE_DICTATION_HOTKEY_PING_PORT:-18447}/health (override VOICE_DICTATION_HOTKEY_PING_PORT)"
+    nohup env VOICE_DICTATION_PORT="$PORT" VOICE_DICTATION_AI_FRAME_USER="$HOTKEY_USER" \
+      VOICE_DICTATION_HOTKEY_PING_PORT="${VOICE_DICTATION_HOTKEY_PING_PORT:-18447}" \
+      "$VENV_PY" "$ROOT/run_hotkey_agent.py" >>"$ROOT/logs/hotkey-agent.log" 2>&1 &
+    echo $! >"$ROOT/logs/hotkey-agent.pid"
+  else
+    echo "warning: skipping hotkey agent — no VOICE_DICTATION_AI_FRAME_USER, no users/.hotkey_agent_target_username," >&2
+    echo "         and not exactly one account in users/users.json. Save a hotkey in Preferences (logged in)" >&2
+    echo "         then restart ./start.sh, or export VOICE_DICTATION_AI_FRAME_USER=<username>." >&2
+    stop_hotkey_agent_for_repo
+  fi
+fi
 
 cd "$ROOT/ai-frame"
 exec "$VENV_PY" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" "${RELOAD_ARGS[@]}"

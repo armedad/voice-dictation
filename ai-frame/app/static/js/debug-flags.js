@@ -18,6 +18,7 @@ const FLAG_DEFINITIONS = {
     MODELS: { default: false, desc: 'Model loading' },
     NOTIFICATIONS: { default: true, desc: 'Notifications' },
     APP: { default: false, desc: 'General app' },
+    DICTATION: { default: false, desc: 'Dictate button & hotkey UI traces' },
 };
 
 const STORAGE_KEY = 'aiframe_debug_flags';

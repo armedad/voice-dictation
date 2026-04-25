@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import threading
 import wave
 
 import numpy as np
@@ -21,3 +22,60 @@ def record_wav_bytes(duration_s: float, sample_rate: int = 16000) -> bytes:
         wf.setframerate(sample_rate)
         wf.writeframes(audio_i16.tobytes())
     return buf.getvalue()
+
+
+def record_wav_bytes_interruptible(
+    duration_s: float,
+    cancel_event: threading.Event,
+    *,
+    sample_rate: int = 16000,
+    chunk_s: float = 0.25,
+) -> tuple[bytes, bool]:
+    """
+    Record mono WAV while polling ``cancel_event`` between reads.
+
+    Uses a single ``sounddevice.InputStream`` for the whole capture so macOS shows one
+    continuous microphone session (avoids flashing from repeated ``sd.rec`` open/close).
+
+    Returns ``(wav_bytes, cancelled)``. When ``cancelled`` is True, returns empty bytes and
+    callers should skip transcription/typing.
+    """
+    if not isinstance(cancel_event, threading.Event):
+        raise TypeError("cancel_event must be threading.Event")
+
+    n_target = int(duration_s * sample_rate)
+    block_frames = max(1, int(chunk_s * sample_rate))
+    parts: list[np.ndarray] = []
+    n_read = 0
+
+    with sd.InputStream(
+        samplerate=sample_rate,
+        channels=1,
+        dtype="float32",
+        blocksize=block_frames,
+    ) as stream:
+        while n_read < n_target:
+            if cancel_event.is_set():
+                return b"", True
+            need = min(block_frames, n_target - n_read)
+            data, _overflowed = stream.read(need)
+            if data is None or len(data) == 0:
+                continue
+            arr = np.asarray(data, dtype=np.float32)
+            parts.append(np.squeeze(arr, axis=1))
+            n_read += arr.shape[0]
+
+    if cancel_event.is_set():
+        return b"", True
+    if not parts:
+        return b"", False
+
+    audio = np.concatenate(parts) if len(parts) > 1 else parts[0]
+    audio_i16 = (audio * 32767.0).clip(-32768, 32767).astype(np.int16)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(audio_i16.tobytes())
+    return buf.getvalue(), False
