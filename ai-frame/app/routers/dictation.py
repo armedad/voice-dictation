@@ -357,6 +357,24 @@ async def _execute_dictation(
         text_out = (text or "").strip()
         if not text_out:
             raw_tr = (capture_audit.get("raw_transcript") or "").strip()
+            empty_snapshot = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "system_prompt_full": cleanup_system_prompt or "",
+                "user_message": raw_tr,
+                "response_text_full": "(No speech detected)",
+                "llm_cleanup_enabled": llm_cleanup,
+                "cleanup_provider": getattr(clean_ep, "provider", None) if clean_ep else None,
+                "cleanup_model": getattr(clean_ep, "model_name", None) if clean_ep else None,
+                "cleanup_base_url": (clean_ep.baseURL if clean_ep else "") or "",
+                "status": "empty_transcript",
+                "source": source,
+            }
+            store.save_dictation_last_llm_snapshot(empty_snapshot)
+            publish_event(
+                store.username,
+                "dictation_context_updated",
+                {"source": source, "status": "empty_transcript"},
+            )
             _dictation_server_log(
                 "dictation skipped empty transcript",
                 {"source": source, "user": store.username, "raw_len": len(raw_tr)},
@@ -376,6 +394,11 @@ async def _execute_dictation(
             "cleanup_base_url": (clean_ep.baseURL if clean_ep else "") or "",
         }
         store.save_dictation_last_llm_snapshot(snapshot)
+        publish_event(
+            store.username,
+            "dictation_context_updated",
+            {"source": source, "status": "ok"},
+        )
 
         _dictation_server_log(
             "dictation pipeline ok before type",
