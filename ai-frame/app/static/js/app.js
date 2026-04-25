@@ -184,6 +184,7 @@ function setupEventListeners() {
                 try {
                     debugLog('DICTATION', 'POST /api/dictation/hotkey/cancel (stop recording)');
                     await api('dictation/hotkey/cancel', { method: 'POST', body: {} });
+                    dictateBtn.textContent = 'Stopping…';
                 } catch (e) {
                     debugWarn('DICTATION', 'hotkey/cancel failed:', e?.message || e);
                     alert(e.message || 'Could not stop dictation');

@@ -73,11 +73,17 @@ def _probe_hotkey_agent_via_ping(session_user: str) -> tuple[str, dict[str, Any]
     return "alive", {"ping_url": url, "ping_username": u}
 
 _dictation_cancel = threading.Event()
+_dictation_stop = threading.Event()
 _dictation_session_lock = asyncio.Lock()
+_dictation_active = False
 
 
 def _set_dictation_cancel() -> None:
     _dictation_cancel.set()
+
+
+def _set_dictation_stop() -> None:
+    _dictation_stop.set()
 
 
 def _require_loopback(request: Request) -> None:
@@ -231,11 +237,13 @@ async def _execute_dictation(
         {"source": source, "user": store.username, "seconds": RECORD_SECONDS},
     )
     cancel_event.clear()
+    _dictation_stop.clear()
     try:
-        wav, cancelled = await asyncio.to_thread(
+        wav, cancelled, stopped = await asyncio.to_thread(
             record_wav_bytes_interruptible,
-            RECORD_SECONDS,
+            None,
             cancel_event,
+            stop_event=_dictation_stop,
         )
     except Exception as e:
         raise HTTPException(
@@ -249,6 +257,12 @@ async def _execute_dictation(
             {"source": source, "user": store.username, "cancelled": cancelled},
         )
         return {"ok": False, "cancelled": True, "text": ""}
+
+    if stopped:
+        _dictation_server_log(
+            "dictation record stopped",
+            {"source": source, "user": store.username, "seconds": "toggle_stop"},
+        )
 
     capture_audit: dict[str, Any] = {}
     try:
@@ -320,10 +334,13 @@ async def record_and_type(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=401, detail="Not logged in")
 
     store = get_user_store(request)
+    global _dictation_active
     async with _dictation_session_lock:
+        _dictation_active = True
         out = await _execute_dictation(
             store, cancel_event=_dictation_cancel, source="record_and_type"
         )
+        _dictation_active = False
     if out.get("cancelled"):
         return {"ok": False, "cancelled": True, "text": ""}
     if out.get("skipped_empty"):
@@ -419,6 +436,7 @@ async def dictation_hotkey_cancel(request: Request) -> dict[str, Any]:
         {"client": request.client.host if request.client else None},
     )
     _set_dictation_cancel()
+    _set_dictation_stop()
     return {"ok": True}
 
 
@@ -454,10 +472,17 @@ async def dictation_hotkey_toggle(
         "dictation hotkey toggle accepted",
         {"user": body.username, "client": request.client.host if request.client else None},
     )
+    global _dictation_active
+    if _dictation_active:
+        _dictation_server_log("dictation hotkey toggle -> stop active session", {"user": body.username})
+        _set_dictation_stop()
+        return {"ok": True, "stopped": True}
     async with _dictation_session_lock:
+        _dictation_active = True
         out = await _execute_dictation(
             store, cancel_event=_dictation_cancel, source="hotkey_toggle"
         )
+        _dictation_active = False
     if out.get("cancelled"):
         _dictation_server_log(
             "dictation hotkey toggle finished cancelled",
