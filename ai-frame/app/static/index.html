@@ -199,7 +199,6 @@
                             <em>typing</em> the transcript into other apps. If a chord never fires, check <code>logs/hotkey-agent.log</code>
                             for <code>RegisterEventHotKey</code> errors or conflicts with another app using the same shortcut.
                         </p>
-                        <p id="dictation-hotkey-capture-status" class="setting-hint dictation-hotkey-capture-status" hidden></p>
                         <input
                             type="text"
                             id="dictation-hotkey-capture-sink"
@@ -220,6 +219,26 @@
                             <span id="dictation-hotkey-cancel-display" class="dictation-hotkey-label">(none)</span>
                             <button type="button" class="btn-small" id="dictation-hotkey-cancel-select">Select</button>
                             <button type="button" class="btn-small" id="dictation-hotkey-cancel-clear">Clear</button>
+                        </div>
+                        <div
+                            class="dictation-hotkey-footer"
+                            id="dictation-hotkey-footer"
+                            aria-label="Hotkey capture status"
+                            aria-live="polite"
+                        >
+                            <div class="dictation-hotkey-footer-slot">
+                                <p id="dictation-hotkey-capture-status" class="dictation-hotkey-footer-status" hidden></p>
+                            </div>
+                            <div class="dictation-hotkey-footer-actions">
+                                <button
+                                    type="button"
+                                    class="btn-secondary btn-small"
+                                    id="dictation-hotkey-capture-cancel"
+                                    hidden
+                                >
+                                    Cancel
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

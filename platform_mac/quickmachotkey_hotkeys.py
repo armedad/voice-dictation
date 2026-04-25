@@ -47,7 +47,8 @@ class QuickMachHotkeyController:
     """Register hotkeys via quickmachotkey and run AppHelper event loop."""
 
     def __init__(self) -> None:
-        self._handlers: list[Callable[[], None]] = []
+        # Registerable objects from quickHotKey(...)(handler); each has unregister()/register().
+        self._handlers: list[Any] = []
         self._current_keys: tuple[dict[str, Any] | None, dict[str, Any] | None] | None = None
 
     def initialize(self) -> None:
@@ -64,7 +65,9 @@ class QuickMachHotkeyController:
         # endregion
 
     def run_event_loop(self) -> None:
-        AppHelper.runEventLoop()
+        # installInterrupt=True: SIGINT must reach the run loop via MachSignals; otherwise
+        # Ctrl+C is deferred while blocked in NSApplicationMain (no Python bytecode).
+        AppHelper.runEventLoop(installInterrupt=True)
 
     def set_hotkeys(
         self,
@@ -74,25 +77,33 @@ class QuickMachHotkeyController:
         on_toggle: Callable[[], None],
         on_cancel: Callable[[], None],
     ) -> None:
-        if self._current_keys is not None:
-            if self._current_keys == (toggle_chord, cancel_chord):
-                return
-            # quickmachotkey does not expose unregistration; avoid duplicating bindings.
-            _debug_emit(
-                "platform_mac/quickmachotkey_hotkeys.py:set_hotkeys",
-                "rebind skipped (restart required)",
-                {"reason": "no_unregister", "toggle_changed": True, "cancel_changed": True},
-            )
+        if self._current_keys == (toggle_chord, cancel_chord):
             return
+
+        for h in self._handlers:
+            unreg = getattr(h, "unregister", None)
+            if callable(unreg):
+                try:
+                    unreg()
+                except Exception:
+                    _debug_emit(
+                        "platform_mac/quickmachotkey_hotkeys.py:set_hotkeys",
+                        "unregister failed",
+                        {"handler": repr(h)},
+                    )
+        self._handlers.clear()
+
         self._current_keys = (toggle_chord, cancel_chord)
-        self._register_one(toggle_chord, on_toggle, "toggle")
-        self._register_one(cancel_chord, on_cancel, "cancel")
+        used: set[tuple[int, int]] = set()
+        self._register_one(toggle_chord, on_toggle, "toggle", used)
+        self._register_one(cancel_chord, on_cancel, "cancel", used)
 
     def _register_one(
         self,
         chord: dict[str, Any] | None,
         cb: Callable[[], None],
         label: str,
+        used: set[tuple[int, int]],
     ) -> None:
         if chord is None:
             return
@@ -111,6 +122,15 @@ class QuickMachHotkeyController:
             elif m == "ctrl":
                 mods.append(controlKey)
         mod_mask = mask(*mods) if mods else 0
+        key = (int(vk), int(mod_mask))
+        if key in used:
+            _debug_emit(
+                "platform_mac/quickmachotkey_hotkeys.py:_register_one",
+                "duplicate vk+modifiers skipped",
+                {"label": label, "vk": vk, "mods": mod_mask},
+            )
+            return
+        used.add(key)
 
         def _handler() -> None:
             _debug_emit(
