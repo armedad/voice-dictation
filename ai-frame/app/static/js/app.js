@@ -5,7 +5,13 @@
 import { debugLog, debugWarn, serverLog } from './debug-flags.js';
 import { api } from './api.js';
 import { checkAuth, login, register, logout, hasUsers } from './auth.js';
-import { loadSettings, loadModels, loadSpeechModels, initSettings } from './settings.js';
+import {
+    loadSettings,
+    loadModels,
+    loadSpeechModels,
+    initSettings,
+    refreshDictationInputDevices,
+} from './settings.js';
 import { initChat, createConversation } from './chat.js';
 import { initNotifications, startNotificationStream, stopNotificationStream } from './notifications.js';
 import { startDictationEvents, stopDictationEvents } from './dictation-events.js';
@@ -122,6 +128,7 @@ async function initializeApp() {
     await loadSettings();
     await loadModels();
     await loadSpeechModels();
+    await refreshDictationInputDevices().catch((e) => debugWarn('APP', 'mic list refresh failed', e));
     await createConversation();
     await syncContextTabFromSettings();
 }

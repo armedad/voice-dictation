@@ -240,6 +240,113 @@ function eventToChord(e) {
 export const LM_STUDIO_DEFAULT_URL = 'http://localhost:1234';
 export const OLLAMA_DEFAULT_URL = 'http://127.0.0.1:11434';
 
+/** Last successful / failed ``dictation/audio-input`` response (for hint text). */
+let _dictationAudioInputCache = null;
+
+function _formatMicSummary(d) {
+    if (!d || typeof d !== 'object') return 'Unknown';
+    const parts = [d.name || 'Unknown'];
+    if (d.hostapi_name) parts.push(`(${d.hostapi_name})`);
+    const sr = d.default_samplerate;
+    if (sr != null && Number.isFinite(Number(sr))) {
+        parts.push(`· ${Math.round(Number(sr))} Hz`);
+    }
+    return parts.join(' ');
+}
+
+function updateDictationInputDeviceHint() {
+    const hint = document.getElementById('dictation-input-device-hint');
+    const sel = document.getElementById('dictation-input-device-select');
+    if (!hint || !sel) return;
+
+    if (!_dictationAudioInputCache) {
+        hint.hidden = true;
+        hint.textContent = '';
+        return;
+    }
+
+    if (_dictationAudioInputCache.ok === false) {
+        hint.hidden = false;
+        hint.classList.add('dictation-input-device-hint--error');
+        hint.textContent =
+            _dictationAudioInputCache.error ||
+            'Could not query microphones (check sounddevice / PortAudio).';
+        return;
+    }
+
+    hint.classList.remove('dictation-input-device-hint--error');
+    if (sel.value === '') {
+        hint.hidden = false;
+        const sys = _dictationAudioInputCache?.system_default;
+        hint.textContent = `System microphone — currently: ${_formatMicSummary(sys)}`;
+    } else {
+        hint.hidden = false;
+        hint.textContent =
+            'Using the selected device for dictation (not the system default input).';
+    }
+}
+
+/**
+ * Populate Preferences microphone list and sync with saved settings.
+ */
+export async function refreshDictationInputDevices() {
+    const sel = document.getElementById('dictation-input-device-select');
+    if (!sel) return;
+
+    sel.disabled = true;
+    sel.innerHTML = '';
+    const loading = document.createElement('option');
+    loading.value = '';
+    loading.textContent = 'Loading…';
+    sel.appendChild(loading);
+
+    try {
+        const data = await api('dictation/audio-input');
+        _dictationAudioInputCache = data;
+        sel.innerHTML = '';
+
+        const optSys = document.createElement('option');
+        optSys.value = '';
+        optSys.textContent = 'System microphone (follows OS default)';
+        sel.appendChild(optSys);
+
+        for (const d of data.devices || []) {
+            const o = document.createElement('option');
+            o.value = String(d.index);
+            const labelParts = [d.name || 'Unknown'];
+            if (d.hostapi_name) labelParts.push(`— ${d.hostapi_name}`);
+            o.textContent = labelParts.join(' ');
+            sel.appendChild(o);
+        }
+
+        const saved = getCurrentSettings().dictation_input_device_index;
+        const valid = new Set((data.devices || []).map((x) => x.index));
+        let pick = '';
+        if (saved != null && valid.has(saved)) {
+            pick = String(saved);
+        } else if (saved != null && !valid.has(saved)) {
+            try {
+                await saveSettings({ dictation_input_device_index: null });
+            } catch (_e) {
+                /* ignore; selection falls back to system */
+            }
+        }
+        sel.value = pick;
+
+        updateDictationInputDeviceHint();
+    } catch (e) {
+        _dictationAudioInputCache = { ok: false, error: e.message || String(e) };
+        sel.innerHTML = '';
+        const o = document.createElement('option');
+        o.value = '';
+        o.textContent = 'Could not load microphones';
+        sel.appendChild(o);
+        updateDictationInputDeviceHint();
+    } finally {
+        sel.disabled = false;
+    }
+}
+
 /**
  * Load settings from server
  */
@@ -327,6 +434,16 @@ function applySettings(settings) {
     const hotCancelDisp = document.getElementById('dictation-hotkey-cancel-display');
     if (hotCancelDisp) {
         hotCancelDisp.textContent = formatChordDisplay(settings.dictation_hotkey_cancel);
+    }
+
+    const micSel = document.getElementById('dictation-input-device-select');
+    if (micSel && micSel.options.length > 1) {
+        const idx = settings.dictation_input_device_index;
+        const want = idx == null || idx === '' ? '' : String(idx);
+        if ([...micSel.options].some((o) => o.value === want)) {
+            micSel.value = want;
+        }
+        updateDictationInputDeviceHint();
     }
 }
 
@@ -720,6 +837,10 @@ async function openSettings() {
         loadProviders();
         checkProviderStatus();
         await loadSpeechModels();
+        const prefsPage = document.getElementById('settings-preferences');
+        if (prefsPage && prefsPage.classList.contains('active')) {
+            refreshDictationInputDevices().catch((e) => debugError('SETTINGS', e));
+        }
     }
 }
 
@@ -772,6 +893,9 @@ export function initSettings() {
             
             // Save last tab
             localStorage.setItem('aiframe_settings_tab', tab.dataset.tab);
+            if (tab.dataset.tab === 'preferences') {
+                refreshDictationInputDevices().catch((e) => debugError('SETTINGS', e));
+            }
         });
     });
     
@@ -896,6 +1020,24 @@ export function initSettings() {
             await saveSettings({
                 dictation_llm_cleanup_enabled: dictationLlmCheckbox.checked,
             });
+        });
+    }
+
+    const dictationMicSel = document.getElementById('dictation-input-device-select');
+    if (dictationMicSel) {
+        dictationMicSel.addEventListener('change', async () => {
+            const prevIdx = getCurrentSettings().dictation_input_device_index;
+            const prevVal = prevIdx == null || prevIdx === '' ? '' : String(prevIdx);
+            const v = dictationMicSel.value;
+            try {
+                await saveSettings({
+                    dictation_input_device_index: v === '' ? null : parseInt(v, 10),
+                });
+                updateDictationInputDeviceHint();
+            } catch (e) {
+                debugError('SETTINGS', 'Microphone device save failed:', e);
+                dictationMicSel.value = prevVal;
+            }
         });
     }
 
