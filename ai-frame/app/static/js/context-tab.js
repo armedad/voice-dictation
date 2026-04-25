@@ -149,31 +149,50 @@ function scheduleSaveCustomBase() {
 
 export function initContextTab() {
     const navChat = document.getElementById('nav-chat-tab');
+    const navProfile = document.getElementById('nav-profile-tab');
     const navCtx = document.getElementById('nav-context-tab');
     const viewChat = document.getElementById('view-chat');
+    const viewProfile = document.getElementById('view-profile');
     const viewCtx = document.getElementById('view-context');
-    if (!navChat || !navCtx || !viewChat || !viewCtx) {
+    if (!navChat || !navCtx || !viewChat || !viewCtx || !navProfile || !viewProfile) {
         debugLog('CONTEXT', 'Context tab DOM missing; skip init');
         return;
     }
 
     const showChat = () => {
         navChat.classList.add('active');
+        navProfile.classList.remove('active');
         navCtx.classList.remove('active');
         viewChat.style.display = '';
+        viewProfile.style.display = 'none';
         viewCtx.style.display = 'none';
+    };
+
+    const showProfile = async () => {
+        navProfile.classList.add('active');
+        navChat.classList.remove('active');
+        navCtx.classList.remove('active');
+        viewProfile.style.display = '';
+        viewChat.style.display = 'none';
+        viewCtx.style.display = 'none';
+        await syncContextTabFromSettings();
     };
 
     const showContext = async () => {
         navCtx.classList.add('active');
         navChat.classList.remove('active');
+        navProfile.classList.remove('active');
         viewCtx.style.display = '';
         viewChat.style.display = 'none';
+        viewProfile.style.display = 'none';
         await syncContextTabFromSettings();
         await refreshDictationLastContext();
     };
 
     navChat.addEventListener('click', showChat);
+    navProfile.addEventListener('click', () => {
+        showProfile().catch((e) => debugError('PROFILE', e));
+    });
     navCtx.addEventListener('click', () => {
         showContext().catch((e) => debugError('CONTEXT', e));
     });

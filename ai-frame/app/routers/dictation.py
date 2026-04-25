@@ -1,4 +1,4 @@
-"""Local dictation: record from mic, transcribe + cleanup, inject at OS focus (macOS)."""
+"""Local dictation: record from mic, transcribe + cleanup, inject at OS focus (macOS / Windows)."""
 from __future__ import annotations
 
 import asyncio
@@ -173,6 +173,44 @@ def _format_verbatim_llm_request(system_prompt_full: str, user_message: str) -> 
     return "\n\n".join(blocks)
 
 
+_NO_CLEANUP_LLM_EMPTY = (
+    "No prompt was sent to the cleanup LLM (no usable transcript after speech recognition)."
+)
+_NO_CLEANUP_LLM_DISABLED = (
+    "No prompt was sent to the cleanup LLM (LLM rewrite before typing is off in Preferences)."
+)
+
+
+def _verbatim_request_for_context_tab(snap: dict[str, Any]) -> str:
+    """
+    Text for the Context tab request panel: real cleanup bundle, or an explicit note when
+    the cleanup LLM was never invoked.
+    """
+    if not isinstance(snap, dict):
+        return ""
+    status = snap.get("status")
+    if status == "empty_transcript":
+        return _NO_CLEANUP_LLM_EMPTY
+
+    llm_cleanup_on = snap.get("llm_cleanup_enabled", True)
+    if llm_cleanup_on is False:
+        raw = (snap.get("user_message") or "").strip()
+        if raw:
+            return (
+                _NO_CLEANUP_LLM_DISABLED
+                + "\n\n=== raw transcript from speech recognition (typed as-is, not sent to any LLM) ===\n"
+                + raw
+            )
+        return _NO_CLEANUP_LLM_DISABLED + "\n\n(No transcribed text for this run.)"
+
+    sys_full = snap.get("system_prompt_full") or ""
+    user_msg = snap.get("user_message") or ""
+    if not str(user_msg).strip() and not str(sys_full).strip():
+        return _NO_CLEANUP_LLM_EMPTY
+
+    return _format_verbatim_llm_request(str(sys_full), str(user_msg))
+
+
 @router.get("/dictation/prompt-defaults")
 async def dictation_prompt_defaults(request: Request) -> dict[str, str]:
     """Built-in dictation cleanup base prompt (for Context tab when using default)."""
@@ -215,13 +253,11 @@ async def dictation_last_context(
     resolved = total - 1 if index is None else index
     resolved = max(0, min(resolved, total - 1))
     snap = entries[resolved]
-    sys_full = snap.get("system_prompt_full") or ""
-    user_msg = snap.get("user_message") or ""
     response = snap.get("response_text_full") or ""
     cur_ts = snap.get("timestamp") or None
     return {
         "snapshot": snap,
-        "verbatim_request": _format_verbatim_llm_request(sys_full, user_msg),
+        "verbatim_request": _verbatim_request_for_context_tab(snap),
         "response_text_full": response,
         "history_index": resolved,
         "history_total": total,
@@ -237,10 +273,16 @@ async def _execute_dictation(
     source: str = "dictation",
 ) -> dict[str, Any]:
     """Shared dictation pipeline: record → STT/cleanup → type. Respects ``cancel_event``."""
-    if sys.platform != "darwin":
+    if sys.platform == "darwin":
+        from platform_mac.audio import record_wav_bytes_interruptible
+        from platform_mac.typing_inject import TypingInjectionError, type_text_strict
+    elif sys.platform == "win32":
+        from platform_win.audio import record_wav_bytes_interruptible
+        from platform_win.typing_inject import TypingInjectionError, type_text_strict
+    else:
         raise HTTPException(
             status_code=501,
-            detail="Dictation + synthetic typing is only wired for macOS in this build.",
+            detail="Dictation + synthetic typing is only wired for macOS and Windows in this build.",
         )
 
     from core.config import load_config
@@ -249,8 +291,6 @@ async def _execute_dictation(
         format_vocabulary_for_whisper_initial_prompt,
     )
     from core.orchestrator import run_pipeline
-    from platform_mac.audio import record_wav_bytes_interruptible
-    from platform_mac.typing_inject import TypingInjectionError, type_text_strict
 
     settings = store.get_settings()
     llm_cleanup = settings.dictation_llm_cleanup_enabled
@@ -303,9 +343,14 @@ async def _execute_dictation(
                 stop_event=_dictation_stop,
             )
         except Exception as e:
+            hint = (
+                "Check mic permission and PortAudio."
+                if sys.platform == "darwin"
+                else "Check microphone privacy settings and that the input device is available."
+            )
             raise HTTPException(
                 status_code=500,
-                detail=f"Microphone capture failed: {e!s}. Check mic permission and PortAudio.",
+                detail=f"Microphone capture failed: {e!s}. {hint}",
             ) from e
 
         if cancelled or not wav:
@@ -426,7 +471,7 @@ async def _execute_dictation(
 async def record_and_type(request: Request) -> dict[str, Any]:
     """
     Requires login cookie. Records fixed duration from default mic, runs voice pipeline,
-    then types the result at the current keyboard focus (any app). macOS only.
+    then types the result at the current keyboard focus (any app). macOS / Windows.
     """
     if not request.cookies.get("aiframe_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
@@ -462,7 +507,7 @@ async def record_and_type(request: Request) -> dict[str, Any]:
 @router.get("/dictation/hotkey/status")
 async def dictation_hotkey_agent_status(request: Request) -> dict[str, Any]:
     """
-    Whether the macOS hotkey sidecar appears alive for this login.
+    Whether the embedded hotkey sidecar appears alive for this login (macOS / Windows).
 
     Prefer a **loopback HTTP GET** to the sidecar ``/health`` (responds only while the
     process runs). Falls back to ``logs/hotkey_agent_heartbeat.json`` for older agents.
@@ -473,7 +518,7 @@ async def dictation_hotkey_agent_status(request: Request) -> dict[str, Any]:
     store = get_user_store(request)
     session_user = store.username
 
-    if sys.platform != "darwin":
+    if sys.platform not in ("darwin", "win32"):
         return {
             "macos_dictation_hotkeys_supported": False,
             "agent_running_for_you": None,

@@ -62,6 +62,7 @@
             </div>
             <nav class="header-app-nav" aria-label="Main views">
                 <button type="button" id="nav-chat-tab" class="header-app-tab active">Chat</button>
+                <button type="button" id="nav-profile-tab" class="header-app-tab">Profile</button>
                 <button type="button" id="nav-context-tab" class="header-app-tab">Context</button>
             </nav>
             <div class="header-center">
@@ -104,38 +105,79 @@
                     </div>
                 </div>
             </div>
+            <div id="view-profile" class="main-view profile-panel" style="display: none;">
+                <div class="profile-grid">
+                    <div class="profile-column">
+                        <div class="settings-section">
+                            <h3 class="settings-section-title">LLM rewrite before typing</h3>
+                            <p class="setting-hint">After speech-to-text, a pass with your <strong>Default model</strong> (Models tab) rewrites the transcript before it is typed into the focused field. This tab controls that pass only.</p>
+                            <label class="setting-checkbox-label">
+                                <input type="checkbox" id="dictation-llm-cleanup-enabled" checked>
+                                <span>Run dictation through LLM before typing</span>
+                            </label>
+                            <p class="setting-hint">Turn off to insert raw speech-to-text only (no default chat model required).</p>
+                        </div>
+                        <div class="settings-section profile-dictation-instructions">
+                            <h3 class="settings-section-title">Your instructions</h3>
+                            <p class="setting-hint">Optional. The model already aims for clear intent, not literal speech. Add tone, audience, formatting limits, or vocabulary preferences below. Leave empty for the default behavior only.</p>
+                            <textarea id="dictation-instructions" class="dictation-instructions-textarea" rows="10" placeholder="e.g. Write in first person. Keep paragraphs short. Use American spelling."></textarea>
+                            <p id="dictation-instructions-saved" class="dictation-instructions-saved" hidden>Saved.</p>
+                        </div>
+                        
+                    </div>
+                    <div class="profile-column">
+                        <div class="settings-section profile-vocabulary">
+                            <h3 class="settings-section-title">Preferred terms</h3>
+                            <p class="setting-hint">One entry per line: product names, people, acronyms, internal codenames. The <strong>dictation LLM</strong> (when enabled) uses this list to fix spelling and choose the right form when the transcript is ambiguous. Local <strong>faster-whisper</strong> also receives a short hint (weak bias only).</p>
+                            <p class="setting-hint">For reliable names and jargon, the LLM pass is the main lever; speech models cannot guarantee a custom lexicon the way a dedicated keyword spotter would.</p>
+                            <textarea id="dictation-vocabulary" class="dictation-instructions-textarea" rows="12" placeholder="One per line, e.g. Zapier / Okta SSO / Q3 OKRs"></textarea>
+                            <p id="dictation-vocabulary-saved" class="dictation-instructions-saved" hidden>Saved.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div id="view-context" class="main-view context-panel" style="display: none;">
-                <div class="context-section">
-                    <h2 class="context-section-title">Dictation cleanup — base system prompt</h2>
-                    <p class="setting-hint">Replaces only the <strong>base</strong> segment. Vocabulary and Dictation instructions are always merged after this (see Settings).</p>
-                    <div class="setting-row setting-row-checkbox">
-                        <label class="setting-checkbox-label">
-                            <input type="checkbox" id="dictation-use-default-prompt" checked>
-                            <span>Use built-in default base prompt</span>
-                        </label>
+                <div class="context-grid">
+                    <div class="context-column">
+                        <div class="context-section context-base-section">
+                            <h2 class="context-section-title">Dictation cleanup — base system prompt</h2>
+                            <p class="setting-hint">Replaces only the <strong>base</strong> segment. Vocabulary and Dictation instructions are always merged after this (see Settings).</p>
+                            <label class="setting-checkbox-label">
+                                <input type="checkbox" id="dictation-use-default-prompt" checked>
+                                <span>Use built-in default base prompt</span>
+                            </label>
+                            <textarea id="dictation-context-base-prompt" class="dictation-instructions-textarea context-base-textarea" rows="8" placeholder="Custom base prompt when default is off"></textarea>
+                            <p id="dictation-context-base-saved" class="dictation-instructions-saved" hidden>Saved.</p>
+                        </div>
                     </div>
-                    <textarea id="dictation-context-base-prompt" class="dictation-instructions-textarea context-base-textarea" rows="8" placeholder="Custom base prompt when default is off"></textarea>
-                    <p id="dictation-context-base-saved" class="dictation-instructions-saved" hidden>Saved.</p>
-                </div>
-                <div class="context-section">
-                    <h2 class="context-section-title">Dictation history</h2>
-                    <p id="dictation-last-done-at" class="setting-hint dictation-last-done-at">Last dictation: —</p>
-                    <div class="context-history-toolbar" role="group" aria-label="Navigate dictation history">
-                        <button type="button" id="dictation-context-back" class="btn-secondary" title="Older dictation">Back</button>
-                        <span id="dictation-context-position" class="context-history-position">—</span>
-                        <button type="button" id="dictation-context-forward" class="btn-secondary" title="Newer dictation">Forward</button>
-                    </div>
-                </div>
-                <div class="context-section">
-                    <h2 class="context-section-title">Dictation — request sent to cleanup LLM</h2>
-                    <p class="setting-hint">Read-only. Browse prior runs with Back / Forward above.</p>
-                    <textarea id="dictation-last-request" class="dictation-instructions-textarea context-readonly" rows="12" readonly></textarea>
-                </div>
-                <div class="context-section">
-                    <h2 class="context-section-title">Dictation — LLM response (typed into focus)</h2>
-                    <div class="context-results-row">
-                        <textarea id="dictation-last-response" class="dictation-instructions-textarea context-readonly context-results-text" rows="8" readonly></textarea>
-                        <button type="button" id="dictation-last-response-copy" class="btn-secondary">Copy</button>
+                    <div class="context-column">
+                        <div class="context-section">
+                            <div class="context-history-header">
+                                <h2 class="context-section-title">Dictation history</h2>
+                                <div class="context-history-actions" role="group" aria-label="Navigate dictation history">
+                                    <button type="button" id="dictation-context-back" class="btn-secondary" title="Older dictation">Back</button>
+                                    <button type="button" id="dictation-context-forward" class="btn-secondary" title="Newer dictation">Forward</button>
+                                </div>
+                            </div>
+                            <p id="dictation-last-done-at" class="setting-hint dictation-last-done-at">Last dictation: —</p>
+                            <div class="context-history-toolbar">
+                                <span id="dictation-context-position" class="context-history-position">—</span>
+                            </div>
+                        </div>
+                        <div class="context-section context-request-section">
+                            <h2 class="context-section-title">Dictation — request sent to cleanup LLM</h2>
+                            <p class="setting-hint">Read-only. Browse prior runs with Back / Forward above.</p>
+                            <textarea id="dictation-last-request" class="dictation-instructions-textarea context-readonly" rows="12" readonly></textarea>
+                        </div>
+                        <div class="context-section">
+                            <div class="context-history-header context-response-header">
+                                <h2 class="context-section-title">Dictation — LLM response (typed into focus)</h2>
+                                <button type="button" id="dictation-last-response-copy" class="btn-secondary">Copy</button>
+                            </div>
+                            <div class="context-results-row">
+                                <textarea id="dictation-last-response" class="dictation-instructions-textarea context-readonly context-results-text" rows="8" readonly></textarea>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -163,14 +205,6 @@
                 <button class="settings-tab" data-tab="models">
                     <span class="tab-icon">🤖</span>
                     <span class="tab-label">Models</span>
-                </button>
-                <button class="settings-tab" data-tab="dictation">
-                    <span class="tab-icon">🎙</span>
-                    <span class="tab-label">Dictation</span>
-                </button>
-                <button class="settings-tab" data-tab="vocabulary">
-                    <span class="tab-icon">📖</span>
-                    <span class="tab-label">Vocabulary</span>
                 </button>
                 <button class="settings-tab" data-tab="debug">
                     <span class="tab-icon">🔧</span>
@@ -317,37 +351,6 @@
                     </div>
                 </div>
                 
-                <!-- Dictation Panel -->
-                <div class="settings-page" id="settings-dictation">
-                    <div class="settings-section">
-                        <h3 class="settings-section-title">LLM rewrite before typing</h3>
-                        <p class="setting-hint">After speech-to-text, a pass with your <strong>Default model</strong> (Models tab) rewrites the transcript before it is typed into the focused field. This tab controls that pass only.</p>
-                        <div class="setting-row setting-row-checkbox">
-                            <label class="setting-checkbox-label">
-                                <input type="checkbox" id="dictation-llm-cleanup-enabled" checked>
-                                <span>Run dictation through LLM before typing</span>
-                            </label>
-                        </div>
-                        <p class="setting-hint">Turn off to insert raw speech-to-text only (no default chat model required).</p>
-                    </div>
-                    <div class="settings-section">
-                        <h3 class="settings-section-title">Your instructions</h3>
-                        <p class="setting-hint">Optional. The model already aims for clear intent, not literal speech. Add tone, audience, formatting limits, or vocabulary preferences below. Leave empty for the default behavior only.</p>
-                        <textarea id="dictation-instructions" class="dictation-instructions-textarea" rows="10" placeholder="e.g. Write in first person. Keep paragraphs short. Use American spelling."></textarea>
-                        <p id="dictation-instructions-saved" class="dictation-instructions-saved" hidden>Saved.</p>
-                    </div>
-                </div>
-                
-                <!-- Vocabulary Panel -->
-                <div class="settings-page" id="settings-vocabulary">
-                    <div class="settings-section">
-                        <h3 class="settings-section-title">Preferred terms</h3>
-                        <p class="setting-hint">One entry per line: product names, people, acronyms, internal codenames. The <strong>dictation LLM</strong> (when enabled) uses this list to fix spelling and choose the right form when the transcript is ambiguous. Local <strong>faster-whisper</strong> also receives a short hint (weak bias only).</p>
-                        <p class="setting-hint">For reliable names and jargon, the LLM pass is the main lever; speech models cannot guarantee a custom lexicon the way a dedicated keyword spotter would.</p>
-                        <textarea id="dictation-vocabulary" class="dictation-instructions-textarea" rows="12" placeholder="One per line, e.g. Zapier / Okta SSO / Q3 OKRs"></textarea>
-                        <p id="dictation-vocabulary-saved" class="dictation-instructions-saved" hidden>Saved.</p>
-                    </div>
-                </div>
                 
                 <!-- Debug Panel -->
                 <div class="settings-page" id="settings-debug">

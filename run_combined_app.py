@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Single-process launcher for Voice Dictation MVP (ai-frame + optional macOS hotkeys).
+"""Single-process launcher for Voice Dictation MVP (ai-frame + optional global hotkeys).
 
 Modes:
-  Default (macOS): main thread = hotkey runtime; background thread = uvicorn (no reload).
+  Default (macOS / Windows): main thread = hotkey runtime; background thread = uvicorn (no reload).
   --skip-hotkey-agent: main thread = uvicorn only (--reload allowed for dev).
 """
 from __future__ import annotations
@@ -108,9 +108,10 @@ def main() -> None:
         )
         return
 
-    if sys.platform != "darwin":
+    if sys.platform not in ("darwin", "win32"):
         print(
-            "error: embedded global hotkeys require macOS. Use --skip-hotkey-agent for API-only.",
+            "error: embedded global hotkeys are only supported on macOS and Windows. "
+            "Use --skip-hotkey-agent for API-only.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -140,7 +141,10 @@ def main() -> None:
     t = threading.Thread(target=_run_uvicorn, name="uvicorn-server", daemon=True)
     t.start()
 
-    from platform_mac.hotkey_agent import main as hotkey_main
+    if sys.platform == "darwin":
+        from platform_mac.hotkey_agent import main as hotkey_main
+    else:
+        from platform_win.hotkey_agent import main as hotkey_main
 
     hotkey_main()
 
