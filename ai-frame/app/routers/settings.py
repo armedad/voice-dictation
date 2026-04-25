@@ -13,7 +13,7 @@ router = APIRouter(tags=["settings"])
 
 
 def _sync_hotkey_agent_target_user(store: UserDataStore, patch: dict[str, Any]) -> None:
-    """Record which account last edited hotkeys so ``run_hotkey_agent`` can default to that user."""
+    """Record which account last edited hotkeys so ``run_combined_app`` / hotkey_agent can default."""
     if not store.username:
         return
     if "dictation_hotkey_toggle" not in patch and "dictation_hotkey_cancel" not in patch:

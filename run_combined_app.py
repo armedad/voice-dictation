@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Run ai-frame + macOS hotkeys in one process.
+"""Single-process launcher for Voice Dictation MVP (ai-frame + optional macOS hotkeys).
 
-Main thread: platform_mac.hotkey_agent.main() (Carbon event pump)
-Background thread: uvicorn app.main:app
+Modes:
+  Default (macOS): main thread = hotkey runtime; background thread = uvicorn (no reload).
+  --skip-hotkey-agent: main thread = uvicorn only (--reload allowed for dev).
 """
 from __future__ import annotations
 
@@ -50,14 +51,26 @@ def _debug_emit(
 
 
 def main() -> None:
-    p = argparse.ArgumentParser()
+    p = argparse.ArgumentParser(description="Single-process Voice Dictation MVP launcher.")
     p.add_argument("--port", type=int, default=8000)
+    p.add_argument(
+        "--skip-hotkey-agent",
+        action="store_true",
+        help="Run only the FastAPI app on the main thread (no global hotkeys).",
+    )
+    p.add_argument(
+        "--reload",
+        action="store_true",
+        help="Enable uvicorn autoreload (only with --skip-hotkey-agent).",
+    )
     args = p.parse_args()
+
+    if args.reload and not args.skip_hotkey_agent:
+        print("error: --reload is only supported with --skip-hotkey-agent.", file=sys.stderr)
+        sys.exit(2)
 
     repo_root = Path(__file__).resolve().parent
     ai_frame = repo_root / "ai-frame"
-    # start.sh cds to ai-frame for plain uvicorn; combined mode runs this script from repo
-    # root so sys.path[0] is repo root — uvicorn cannot import app.* unless ai-frame is on path.
     os.chdir(ai_frame)
     ai_frame_s = str(ai_frame)
     if ai_frame_s not in sys.path:
@@ -73,6 +86,34 @@ def main() -> None:
     # #endregion
 
     os.environ["VOICE_DICTATION_PORT"] = str(args.port)
+    if args.skip_hotkey_agent:
+        os.environ["VOICE_DICTATION_DISABLE_EMBEDDED_HOTKEY_AGENT"] = "1"
+    else:
+        os.environ.pop("VOICE_DICTATION_DISABLE_EMBEDDED_HOTKEY_AGENT", None)
+
+    import uvicorn
+
+    if args.skip_hotkey_agent:
+        _debug_emit(
+            hypothesis_id="H1",
+            location="run_combined_app.py:main",
+            message="uvicorn-only mode (main thread)",
+            data={"port": args.port, "reload": args.reload},
+        )
+        uvicorn.run(
+            "app.main:app",
+            host="127.0.0.1",
+            port=args.port,
+            reload=args.reload,
+        )
+        return
+
+    if sys.platform != "darwin":
+        print(
+            "error: embedded global hotkeys require macOS. Use --skip-hotkey-agent for API-only.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     def _run_uvicorn() -> None:
         # #region agent log
@@ -83,8 +124,6 @@ def main() -> None:
             data={"cwd": os.getcwd()},
         )
         # #endregion
-        import uvicorn
-
         try:
             uvicorn.run("app.main:app", host="127.0.0.1", port=args.port, reload=False)
         except Exception as e:

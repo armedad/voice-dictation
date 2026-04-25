@@ -1,12 +1,11 @@
 /**
- * Notification system - polls for and displays notifications
+ * Notification system — SSE push (no polling).
  */
 
 import { api } from './api.js';
-import { debugLog, debugError } from './debug-flags.js';
+import { debugLog, debugError, debugWarn } from './debug-flags.js';
 
-let pollInterval = null;
-const POLL_INTERVAL_MS = 30000; // 30 seconds
+let sse = null;
 
 /**
  * Fetch notifications and update UI
@@ -15,15 +14,15 @@ export async function loadNotifications() {
     try {
         const result = await api('/api/notifications');
         debugLog('NOTIFICATIONS', 'Loaded notifications:', result.notifications.length);
-        
-        const undismissed = result.notifications.filter(n => !n.dismissed);
-        
+
+        const undismissed = result.notifications.filter((n) => !n.dismissed);
+
         if (undismissed.length > 0) {
             showNotificationBanner(undismissed[0], undismissed.length);
         } else {
             hideNotificationBanner();
         }
-        
+
         return result.notifications;
     } catch (e) {
         debugError('NOTIFICATIONS', 'Failed to load:', e);
@@ -39,12 +38,12 @@ function showNotificationBanner(notification, totalCount) {
     const message = document.getElementById('notification-message');
     const count = document.getElementById('notification-count');
     const dismissAll = document.getElementById('notification-dismiss-all');
-    
+
     if (!banner || !message) return;
-    
+
     banner.dataset.notificationId = notification.id;
     message.textContent = notification.message;
-    
+
     if (totalCount > 1) {
         count.textContent = `(+${totalCount - 1} more)`;
         count.style.display = '';
@@ -53,7 +52,7 @@ function showNotificationBanner(notification, totalCount) {
         count.style.display = 'none';
         dismissAll.style.display = 'none';
     }
-    
+
     banner.classList.add('show');
 }
 
@@ -87,31 +86,39 @@ export async function dismissAllNotifications() {
     try {
         await api('/api/notifications/dismiss-all', { method: 'POST' });
         debugLog('NOTIFICATIONS', 'Dismissed all');
-        hideNotificationBanner();
+        await loadNotifications();
     } catch (e) {
         debugError('NOTIFICATIONS', 'Failed to dismiss all:', e);
     }
 }
 
 /**
- * Start polling for notifications
+ * Subscribe to server push for notification changes.
  */
-export function startNotificationPolling() {
-    if (pollInterval) return;
-    
-    loadNotifications();
-    pollInterval = setInterval(loadNotifications, POLL_INTERVAL_MS);
-    debugLog('NOTIFICATIONS', 'Started polling');
+export function startNotificationStream() {
+    if (sse) return;
+
+    sse = new EventSource('/api/notifications/stream');
+    sse.addEventListener('open', () => {
+        debugLog('NOTIFICATIONS', 'SSE connected');
+        loadNotifications();
+    });
+    sse.addEventListener('notifications', () => {
+        loadNotifications();
+    });
+    sse.addEventListener('error', () => {
+        debugWarn('NOTIFICATIONS', 'SSE connection error');
+    });
 }
 
 /**
- * Stop polling for notifications
+ * Close notification SSE.
  */
-export function stopNotificationPolling() {
-    if (pollInterval) {
-        clearInterval(pollInterval);
-        pollInterval = null;
-        debugLog('NOTIFICATIONS', 'Stopped polling');
+export function stopNotificationStream() {
+    if (sse) {
+        sse.close();
+        sse = null;
+        debugLog('NOTIFICATIONS', 'SSE closed');
     }
 }
 
@@ -122,7 +129,7 @@ export function initNotifications() {
     const dismissBtn = document.getElementById('notification-dismiss');
     const dismissAllBtn = document.getElementById('notification-dismiss-all');
     const banner = document.getElementById('notification-banner');
-    
+
     if (dismissBtn) {
         dismissBtn.addEventListener('click', async () => {
             const notifId = banner?.dataset?.notificationId;
@@ -131,7 +138,7 @@ export function initNotifications() {
             }
         });
     }
-    
+
     if (dismissAllBtn) {
         dismissAllBtn.addEventListener('click', async () => {
             await dismissAllNotifications();

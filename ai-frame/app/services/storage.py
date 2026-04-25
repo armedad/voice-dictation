@@ -369,6 +369,10 @@ class UserDataStore:
         self.ensure_dirs()
         with open(self.notifications_file, "w", encoding="utf-8") as f:
             json.dump([n.model_dump() for n in notifications], f, indent=2)
+        if self.username:
+            from app.services.notification_events import publish_notifications_changed
+
+            publish_notifications_changed(self.username)
     
     def add_notification(self, notif_type: str, message: str, 
                         source: Optional[str] = None, 
