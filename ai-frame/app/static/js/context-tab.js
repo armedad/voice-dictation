@@ -87,12 +87,19 @@ export async function refreshDictationLastContext(options = {}) {
     }
 }
 
-export async function syncContextTabFromSettings() {
+export async function syncContextTabFromSettings(forceRefresh = false) {
     const cb = document.getElementById('dictation-use-default-prompt');
     const ta = document.getElementById('dictation-context-base-prompt');
     if (!cb || !ta) return;
 
-    const s = getCurrentSettings();
+    let s = getCurrentSettings();
+    if (forceRefresh || !Object.keys(s).length) {
+        try {
+            s = await api('/api/settings');
+        } catch (e) {
+            debugError('CONTEXT', 'Failed to refresh settings:', e);
+        }
+    }
     const useDefault = s.dictation_use_default_system_prompt !== false;
     cb.checked = useDefault;
 
@@ -118,7 +125,7 @@ async function onToggleUseDefault() {
     if (!cb) return;
     try {
         await saveSettings({ dictation_use_default_system_prompt: cb.checked });
-        await syncContextTabFromSettings();
+        await syncContextTabFromSettings(true);
     } catch (e) {
         debugError('CONTEXT', 'Toggle save failed:', e);
     }

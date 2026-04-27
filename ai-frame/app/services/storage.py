@@ -43,11 +43,20 @@ class Settings(BaseModel):
     dictation_vocabulary: Optional[str] = None
     dictation_use_default_system_prompt: bool = True
     dictation_custom_system_prompt_base: Optional[str] = None
+    dictation_cleanup_user_prompt_template: Optional[str] = None
     # Global dictation hotkeys (JSON chord or null); see core.hotkey_chord
     dictation_hotkey_toggle: Optional[dict[str, Any]] = None
     dictation_hotkey_cancel: Optional[dict[str, Any]] = None
     # None = follow OS / PortAudio default input; int = explicit PortAudio input device index
     dictation_input_device_index: Optional[int] = None
+
+
+DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE = (
+    "If the user said the following into the dictation engine, what do you think they "
+    "intended to say?\n\n"
+    "User said (verbatim transcript, may contain errors):\n<<<\n{raw}\n>>>\n\n"
+    "Return only the rewritten text. Do not answer the question."
+)
 
 
 def normalize_url(url: str) -> str:
@@ -64,10 +73,17 @@ def get_default_settings() -> Settings:
         try:
             with open(default_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            return Settings(**data)
+            defaults = Settings(**data)
+            if defaults.dictation_cleanup_user_prompt_template is None:
+                defaults.dictation_cleanup_user_prompt_template = (
+                    DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE
+                )
+            return defaults
         except (json.JSONDecodeError, Exception):
             pass
-    return Settings()
+    return Settings(
+        dictation_cleanup_user_prompt_template=DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE
+    )
 
 
 class Notification(BaseModel):
@@ -238,6 +254,10 @@ class UserDataStore:
                 merged_data[key] = value
         
         settings = Settings(**merged_data)
+        if settings.dictation_cleanup_user_prompt_template is None:
+            settings.dictation_cleanup_user_prompt_template = (
+                DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE
+            )
         
         # Normalize URLs
         settings.ollama_url = normalize_url(settings.ollama_url)

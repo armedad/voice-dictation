@@ -78,54 +78,22 @@ export async function sendMessage(message, provider, model) {
     
     try {
         debugLog('CHAT', 'Sending message:', { conversationId: currentConversationId, provider, model });
-        
-        const response = await fetch('/api/chat', {
+
+        const response = await fetch('/api/dictation/cleanup-text', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({
-                conversation_id: currentConversationId,
-                message: message,
-                provider: provider,
-                model: model
-            })
+            body: JSON.stringify({ text: message })
         });
         
         if (!response.ok) {
             throw new Error('Chat request failed');
         }
         
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let fullResponse = '';
-        
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            
-            const chunk = decoder.decode(value);
-            const lines = chunk.split('\n');
-            
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const data = line.slice(6);
-                    try {
-                        const parsed = JSON.parse(data);
-                        if (parsed.content) {
-                            fullResponse += parsed.content;
-                            contentDiv.textContent = fullResponse;
-                            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                        }
-                        if (parsed.conversation_id && !currentConversationId) {
-                            currentConversationId = parsed.conversation_id;
-                        }
-                    } catch (e) {
-                        // Ignore parse errors for incomplete chunks
-                    }
-                }
-            }
-        }
-        
+        const result = await response.json();
+        const fullResponse = result.text || '';
+        contentDiv.textContent = fullResponse;
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
         debugLog('CHAT', 'Response complete');
         
     } catch (e) {

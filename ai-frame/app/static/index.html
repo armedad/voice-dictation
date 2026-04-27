@@ -123,6 +123,12 @@
                             <textarea id="dictation-instructions" class="dictation-instructions-textarea" rows="10" placeholder="e.g. Write in first person. Keep paragraphs short. Use American spelling."></textarea>
                             <p id="dictation-instructions-saved" class="dictation-instructions-saved" hidden>Saved.</p>
                         </div>
+                        <div class="settings-section profile-dictation-template">
+                            <h3 class="settings-section-title">Dictation cleanup template</h3>
+                            <p class="setting-hint">Template sent as the <strong>user message</strong> to the cleanup LLM. Use <code>{raw}</code> where the transcript should be inserted.</p>
+                            <textarea id="dictation-cleanup-template" class="dictation-instructions-textarea" rows="8" placeholder="Use {raw} to insert the transcript."></textarea>
+                            <p id="dictation-cleanup-template-saved" class="dictation-instructions-saved" hidden>Saved.</p>
+                        </div>
                         
                     </div>
                     <div class="profile-column">
