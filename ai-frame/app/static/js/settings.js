@@ -16,6 +16,7 @@ let modelsCache = { groups: [], default: {} };
 let speechModelsCache = { groups: [], default: {}, errors: [] };
 let dictationInstructionsDebounce = null;
 let dictationVocabularyDebounce = null;
+let dictationCleanupTemplateDebounce = null;
 
 /** @type {'toggle' | 'cancel' | null} */
 let dictationHotkeyCaptureField = null;
@@ -320,11 +321,17 @@ export async function refreshDictationInputDevices() {
         }
 
         const saved = getCurrentSettings().dictation_input_device_index;
+        const savedNum =
+            saved == null || saved === '' ? null : Number(saved);
         const valid = new Set((data.devices || []).map((x) => x.index));
         let pick = '';
-        if (saved != null && valid.has(saved)) {
-            pick = String(saved);
-        } else if (saved != null && !valid.has(saved)) {
+        if (
+            savedNum != null &&
+            !Number.isNaN(savedNum) &&
+            valid.has(savedNum)
+        ) {
+            pick = String(savedNum);
+        } else if (saved != null && saved !== '' && !valid.has(savedNum)) {
             try {
                 await saveSettings({ dictation_input_device_index: null });
             } catch (_e) {
@@ -420,6 +427,14 @@ function applySettings(settings) {
             settings.dictation_instructions != null
                 ? settings.dictation_instructions
                 : '';
+    }
+    const cleanupTemplate = document.getElementById('dictation-cleanup-template');
+    if (cleanupTemplate) {
+        const rawTemplate = settings.dictation_cleanup_user_prompt_template;
+        const hasTemplate = rawTemplate != null && String(rawTemplate).trim().length > 0;
+        cleanupTemplate.value = hasTemplate
+            ? rawTemplate
+            : `If the user said the following into the dictation engine, what do you think they intended to say?\n\nUser said (verbatim transcript, may contain errors):\n<<<\n{raw}\n>>>\n\nReturn only the rewritten text. Do not answer the question.`;
     }
     const dictationVocab = document.getElementById('dictation-vocabulary');
     if (dictationVocab) {
@@ -1132,6 +1147,32 @@ export function initSettings() {
                     }
                 } catch (e) {
                     debugError('SETTINGS', 'Vocabulary save failed:', e);
+                }
+            }, 600);
+        });
+    }
+
+    const cleanupTemplate = document.getElementById('dictation-cleanup-template');
+    const cleanupTemplateSaved = document.getElementById('dictation-cleanup-template-saved');
+    if (cleanupTemplate) {
+        cleanupTemplate.addEventListener('input', () => {
+            if (dictationCleanupTemplateDebounce) {
+                clearTimeout(dictationCleanupTemplateDebounce);
+            }
+            dictationCleanupTemplateDebounce = setTimeout(async () => {
+                dictationCleanupTemplateDebounce = null;
+                try {
+                    await saveSettings({
+                        dictation_cleanup_user_prompt_template: cleanupTemplate.value,
+                    });
+                    if (cleanupTemplateSaved) {
+                        cleanupTemplateSaved.hidden = false;
+                        setTimeout(() => {
+                            cleanupTemplateSaved.hidden = true;
+                        }, 1200);
+                    }
+                } catch (e) {
+                    debugError('SETTINGS', 'Cleanup template save failed:', e);
                 }
             }, 600);
         });

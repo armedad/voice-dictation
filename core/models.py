@@ -36,7 +36,22 @@ DEFAULT_CLEANUP_SYSTEM_PROMPT = (
     "You rewrite spoken dictation into clear written text. Capture the user's intent, "
     "not their literal words: tighten phrasing, remove filler and false starts, and "
     "keep the substance. Preserve important names, numbers, and technical terms when "
-    "they matter. Output plain text only: no quotes, no markdown, no preamble or commentary."
+    "they matter. Do not answer questions or add new information. If the transcript is "
+    "a question, preserve it as a question. Output plain text only: no quotes, no "
+    "markdown, no preamble or commentary."
+)
+
+DICTATION_CLEANUP_GUARDRAILS = (
+    "Guardrails (critical): You are rewriting the transcript only. Do not answer "
+    "questions, add facts, or respond as an assistant. If the transcript is a question, "
+    "keep it as a question."
+)
+
+DICTATION_CLEANUP_USER_TEMPLATE = (
+    "If the user said the following into the dictation engine, what do you think they "
+    "intended to say? Rewrite it as clean text only; do not answer the question.\n\n"
+    "User said (verbatim transcript, may contain errors):\n<<<\n{raw}\n>>>\n\n"
+    "Return only the rewritten text."
 )
 
 
@@ -106,4 +121,23 @@ def build_dictation_cleanup_system_prompt(
     extra = (user_instructions or "").strip()
     if extra:
         parts.append(f"User preferences (follow these when rewriting):\n{extra}")
+    parts.append(DICTATION_CLEANUP_GUARDRAILS)
     return "\n\n".join(parts)
+
+
+def format_dictation_cleanup_user_message(raw_transcript: str) -> str:
+    """User message wrapper that reinforces rewrite-only behavior."""
+    raw = (raw_transcript or "").strip()
+    return DICTATION_CLEANUP_USER_TEMPLATE.format(raw=raw)
+
+
+def format_dictation_cleanup_user_message_with_template(
+    raw_transcript: str, template: Optional[str]
+) -> str:
+    raw = (raw_transcript or "").strip()
+    tmpl = (template or "").strip()
+    if not tmpl:
+        return format_dictation_cleanup_user_message(raw)
+    if "{raw}" not in tmpl:
+        tmpl = f"{tmpl}\n\n{{raw}}"
+    return tmpl.format(raw=raw)

@@ -164,6 +164,10 @@ class HotkeyUserBody(BaseModel):
     username: str = Field(..., min_length=1)
 
 
+class DictationTextBody(BaseModel):
+    text: str = Field(..., min_length=1)
+
+
 def _format_verbatim_llm_request(system_prompt_full: str, user_message: str) -> str:
     """Single readonly bundle: system + user roles as sent to the cleanup LLM."""
     blocks = [
@@ -209,6 +213,123 @@ def _verbatim_request_for_context_tab(snap: dict[str, Any]) -> str:
         return _NO_CLEANUP_LLM_EMPTY
 
     return _format_verbatim_llm_request(str(sys_full), str(user_msg))
+
+
+async def _execute_dictation_from_text(
+    store: UserDataStore,
+    *,
+    raw_text: str,
+    source: str,
+) -> dict[str, Any]:
+    """Run cleanup-only pipeline from a provided transcript (no mic)."""
+    from core.config import load_config
+    from core.models import (
+        build_dictation_cleanup_system_prompt,
+        format_vocabulary_for_whisper_initial_prompt,
+        format_dictation_cleanup_user_message_with_template,
+    )
+    from core.orchestrator import run_pipeline
+
+    settings = store.get_settings()
+    llm_cleanup = settings.dictation_llm_cleanup_enabled
+
+    clean_ep = None
+    openai_key = None
+    if llm_cleanup:
+        try:
+            clean_ep, openai_key = build_cleanup_endpoint(settings, store.data_dir)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    cfg = load_config()
+    trans_ep = resolve_transcription_endpoint(settings.speech_model, cfg)
+
+    cleanup_system_prompt = None
+    if llm_cleanup:
+        cleanup_system_prompt = build_dictation_cleanup_system_prompt(
+            settings.dictation_instructions,
+            vocabulary=settings.dictation_vocabulary,
+            use_default_base=settings.dictation_use_default_system_prompt,
+            custom_base=settings.dictation_custom_system_prompt_base,
+        )
+
+    stt_vocab_hint = format_vocabulary_for_whisper_initial_prompt(
+        settings.dictation_vocabulary
+    )
+    raw_transcript = (raw_text or "").strip()
+    if not raw_transcript:
+        empty_snapshot = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "system_prompt_full": cleanup_system_prompt or "",
+            "user_message": "",
+            "response_text_full": "(No text provided)",
+            "llm_cleanup_enabled": llm_cleanup,
+            "cleanup_provider": getattr(clean_ep, "provider", None) if clean_ep else None,
+            "cleanup_model": getattr(clean_ep, "model_name", None) if clean_ep else None,
+            "cleanup_base_url": (clean_ep.baseURL if clean_ep else "") or "",
+            "status": "empty_transcript",
+            "source": source,
+        }
+        store.save_dictation_last_llm_snapshot(empty_snapshot)
+        publish_event(
+            store.username,
+            "dictation_context_updated",
+            {"source": source, "status": "empty_transcript"},
+        )
+        publish_event(store.username, "dictation_empty", {"source": source})
+        return {"ok": True, "cancelled": False, "text": "", "skipped_empty": True}
+
+    cleanup_user_prompt = (
+        format_dictation_cleanup_user_message_with_template(
+            raw_transcript, settings.dictation_cleanup_user_prompt_template
+        )
+        if llm_cleanup
+        else ""
+    )
+
+    try:
+        text = await run_pipeline(
+            b"",
+            "dictation.txt",
+            transcription_endpoint=trans_ep,
+            cleanup_endpoint=clean_ep,
+            cleanup_openai_api_key=openai_key,
+            cleanup_system_prompt=cleanup_system_prompt,
+            cleanup_user_prompt=cleanup_user_prompt,
+            skip_llm_cleanup=not llm_cleanup,
+            transcription_initial_prompt=stt_vocab_hint,
+            capture_audit=None,
+            raw_transcript_override=raw_transcript,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Transcription or cleanup failed: {e!s}",
+        ) from e
+
+    text_out = (text or "").strip()
+    snapshot = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "system_prompt_full": cleanup_system_prompt or "",
+        "user_message": raw_transcript,
+        "response_text_full": text_out,
+        "cleanup_user_prompt": cleanup_user_prompt,
+        "llm_cleanup_enabled": llm_cleanup,
+        "cleanup_provider": getattr(clean_ep, "provider", None) if clean_ep else None,
+        "cleanup_model": getattr(clean_ep, "model_name", None) if clean_ep else None,
+        "cleanup_base_url": (clean_ep.baseURL if clean_ep else "") or "",
+        "source": source,
+    }
+    store.save_dictation_last_llm_snapshot(snapshot)
+    publish_event(
+        store.username,
+        "dictation_context_updated",
+        {"source": source, "status": "ok"},
+    )
+    publish_event(store.username, "dictation_done", {"source": source})
+    return {"ok": True, "cancelled": False, "text": text_out}
 
 
 @router.get("/dictation/prompt-defaults")
@@ -335,6 +456,8 @@ async def _execute_dictation(
     from core.models import (
         build_dictation_cleanup_system_prompt,
         format_vocabulary_for_whisper_initial_prompt,
+        format_dictation_cleanup_user_message,
+        format_dictation_cleanup_user_message_with_template,
     )
     from core.orchestrator import run_pipeline
 
@@ -435,6 +558,14 @@ async def _execute_dictation(
                 cleanup_endpoint=clean_ep,
                 cleanup_openai_api_key=openai_key,
                 cleanup_system_prompt=cleanup_system_prompt,
+                cleanup_user_prompt=None,
+                cleanup_user_prompt_builder=(
+                    (lambda raw: format_dictation_cleanup_user_message_with_template(
+                        raw, settings.dictation_cleanup_user_prompt_template
+                    ))
+                    if llm_cleanup
+                    else None
+                ),
                 skip_llm_cleanup=not llm_cleanup,
                 transcription_initial_prompt=stt_vocab_hint,
                 capture_audit=capture_audit,
@@ -476,11 +607,20 @@ async def _execute_dictation(
             return {"ok": True, "cancelled": False, "text": "", "skipped_empty": True}
 
         raw_tr = capture_audit.get("raw_transcript", "")
+        cleanup_user_prompt = (
+            format_dictation_cleanup_user_message_with_template(
+                raw_tr, settings.dictation_cleanup_user_prompt_template
+            )
+            if llm_cleanup
+            else ""
+        )
+        text_out = (text or "").strip()
         snapshot = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "system_prompt_full": cleanup_system_prompt or "",
             "user_message": raw_tr,
             "response_text_full": text_out,
+            "cleanup_user_prompt": cleanup_user_prompt,
             "llm_cleanup_enabled": llm_cleanup,
             "cleanup_provider": getattr(clean_ep, "provider", None) if clean_ep else None,
             "cleanup_model": getattr(clean_ep, "model_name", None) if clean_ep else None,
@@ -547,6 +687,26 @@ async def record_and_type(request: Request) -> dict[str, Any]:
         _dictation_active = False
     if out.get("cancelled"):
         return {"ok": False, "cancelled": True, "text": ""}
+    if out.get("skipped_empty"):
+        return {"ok": True, "text": "", "skipped_empty": True}
+    return {"ok": True, "text": out.get("text", "")}
+
+
+@router.post("/dictation/cleanup-text")
+async def dictation_cleanup_text(request: Request, body: DictationTextBody) -> dict[str, Any]:
+    """Run dictation cleanup using provided text instead of mic capture."""
+    if not request.cookies.get("aiframe_session"):
+        raise HTTPException(status_code=401, detail="Not logged in")
+    store = get_user_store(request)
+    global _dictation_active
+    if _dictation_active:
+        _emit_overlap(store, "cleanup_text")
+    async with _dictation_session_lock:
+        _dictation_active = True
+        out = await _execute_dictation_from_text(
+            store, raw_text=body.text, source="cleanup_text"
+        )
+        _dictation_active = False
     if out.get("skipped_empty"):
         return {"ok": True, "text": "", "skipped_empty": True}
     return {"ok": True, "text": out.get("text", "")}
