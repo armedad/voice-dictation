@@ -20,6 +20,7 @@ async def run_pipeline(
     cleanup_system_prompt: Optional[str] = None,
     cleanup_user_prompt: Optional[str] = None,
     cleanup_user_prompt_builder: Optional[Callable[[str], str]] = None,
+    cleanup_prompt_builder: Optional[Callable[[str], tuple[str, str]]] = None,
     skip_llm_cleanup: bool = False,
     transcription_initial_prompt: Optional[str] = None,
     capture_audit: Optional[dict[str, Any]] = None,
@@ -40,6 +41,8 @@ async def run_pipeline(
     the raw transcript is sent).
     ``cleanup_user_prompt_builder``: callable that receives the raw transcript and
     returns a user prompt. When provided, it overrides ``cleanup_user_prompt``.
+    ``cleanup_prompt_builder``: callable that receives the raw transcript and returns
+    (system_prompt, user_prompt). When provided, it overrides both system + user prompts.
 
     ``skip_llm_cleanup``: if True, return the raw transcript after STT only.
 
@@ -85,11 +88,18 @@ async def run_pipeline(
     clean = cleanup_endpoint if cleanup_endpoint is not None else cfg.cleanup
     cp = (clean.provider or "").strip().lower()
     sys_prompt = cleanup_system_prompt
+    user_prompt = None
+    if cleanup_prompt_builder is not None:
+        built_sys, built_user = cleanup_prompt_builder(raw)
+        if built_sys or built_user:
+            sys_prompt = built_sys
+            user_prompt = built_user
 
-    if cleanup_user_prompt_builder is not None:
-        user_prompt = cleanup_user_prompt_builder(raw)
-    else:
-        user_prompt = cleanup_user_prompt or raw
+    if user_prompt is None:
+        if cleanup_user_prompt_builder is not None:
+            user_prompt = cleanup_user_prompt_builder(raw)
+        else:
+            user_prompt = cleanup_user_prompt or raw
 
     if cp in ("ollama_chat", "ollama"):
         cleaned = await cleanup_ollama_chat(user_prompt, clean, system_prompt=sys_prompt)

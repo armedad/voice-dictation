@@ -62,10 +62,7 @@ class UpdateSettingsRequest(BaseModel):
     dictation_llm_cleanup_enabled: Optional[bool] = None
     dictation_instructions: Optional[str] = None
     dictation_vocabulary: Optional[str] = None
-    dictation_use_default_system_prompt: Optional[bool] = None
-    dictation_custom_system_prompt_base: Optional[str] = None
-    dictation_cleanup_user_prompt_template: Optional[str] = None
-    dictation_cleanup_user_prompt_template: Optional[str] = None
+    dictation_cleanup_context_template: Optional[str] = None
     dictation_hotkey_toggle: Optional[dict[str, Any]] = None
     dictation_hotkey_cancel: Optional[dict[str, Any]] = None
     dictation_input_device_index: Optional[int] = None

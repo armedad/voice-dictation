@@ -2,6 +2,9 @@
 from fastapi import APIRouter, HTTPException, Response, Request
 from pydantic import BaseModel
 from datetime import datetime, timedelta, timezone
+import threading
+import json
+import time
 
 from app.services import users
 
@@ -28,8 +31,46 @@ class LoginResponse(BaseModel):
 @router.post("/auth/login")
 async def login(request: LoginRequest, response: Response):
     """Authenticate a user."""
+    # #region agent log
+    try:
+        log_line = json.dumps(
+            {
+                "sessionId": "55f014",
+                "runId": "backend-login",
+                "hypothesisId": "H_LOGIN",
+                "location": "auth.py:login",
+                "message": "login request",
+                "data": {"username_len": len(request.username or "")},
+                "timestamp": int(time.time() * 1000),
+            },
+            ensure_ascii=True,
+        )
+        with open("/Users/chee/zapier ai project/.cursor/debug-55f014.log", "a", encoding="utf-8") as f:
+            f.write(log_line + "\n")
+    except OSError:
+        pass
+    # #endregion
     user = users.authenticate(request.username, request.password)
     if not user:
+        # #region agent log
+        try:
+            log_line = json.dumps(
+                {
+                    "sessionId": "55f014",
+                    "runId": "backend-login",
+                    "hypothesisId": "H_LOGIN",
+                    "location": "auth.py:login",
+                    "message": "login rejected",
+                    "data": {"username_len": len(request.username or "")},
+                    "timestamp": int(time.time() * 1000),
+                },
+                ensure_ascii=True,
+            )
+            with open("/Users/chee/zapier ai project/.cursor/debug-55f014.log", "a", encoding="utf-8") as f:
+                f.write(log_line + "\n")
+        except OSError:
+            pass
+        # #endregion
         raise HTTPException(status_code=401, detail="Invalid username or password")
     
     expires = datetime.now(timezone.utc) + timedelta(days=30)
@@ -43,7 +84,26 @@ async def login(request: LoginRequest, response: Response):
         max_age=60 * 60 * 24 * 30,
         expires=expires
     )
-    
+    # #region agent log
+    try:
+        log_line = json.dumps(
+            {
+                "sessionId": "55f014",
+                "runId": "backend-login",
+                "hypothesisId": "H_LOGIN",
+                "location": "auth.py:login",
+                "message": "login ok",
+                "data": {"username": user.username},
+                "timestamp": int(time.time() * 1000),
+            },
+            ensure_ascii=True,
+        )
+        with open("/Users/chee/zapier ai project/.cursor/debug-55f014.log", "a", encoding="utf-8") as f:
+            f.write(log_line + "\n")
+    except OSError:
+        pass
+    # #endregion
+
     return LoginResponse(
         success=True,
         username=user.username,
@@ -52,9 +112,78 @@ async def login(request: LoginRequest, response: Response):
 
 
 @router.post("/auth/logout")
-async def logout(response: Response):
+async def logout(request: Request, response: Response):
     """Log out current user."""
+    # #region agent log
+    try:
+        log_line = json.dumps(
+            {
+                "sessionId": "55f014",
+                "runId": "backend-logout",
+                "hypothesisId": "H_LOGOUT",
+                "location": "auth.py:logout",
+                "message": "logout request",
+                "data": {
+                    "session_user": request.cookies.get("aiframe_session"),
+                    "host": request.headers.get("host"),
+                    "client": request.client.host if request.client else None,
+                    "user_agent": request.headers.get("user-agent"),
+                    "tab_id": request.headers.get("x-twim-tab-id"),
+                },
+                "timestamp": int(time.time() * 1000),
+            },
+            ensure_ascii=True,
+        )
+        with open("/Users/chee/zapier ai project/.cursor/debug-55f014.log", "a", encoding="utf-8") as f:
+            f.write(log_line + "\n")
+    except OSError:
+        pass
+    # #endregion
+    # #region agent log
+    try:
+        log_line = json.dumps(
+            {
+                "sessionId": "55f014",
+                "runId": "backend-logout",
+                "hypothesisId": "H_LOGOUT",
+                "location": "auth.py:logout",
+                "message": "logout delete_cookie",
+                "data": {
+                    "thread": threading.current_thread().name,
+                    "tab_id": request.headers.get("x-twim-tab-id"),
+                },
+                "timestamp": int(time.time() * 1000),
+            },
+            ensure_ascii=True,
+        )
+        with open("/Users/chee/zapier ai project/.cursor/debug-55f014.log", "a", encoding="utf-8") as f:
+            f.write(log_line + "\n")
+    except OSError:
+        pass
+    # #endregion
     response.delete_cookie(key="aiframe_session", path="/")
+    # #region agent log
+    try:
+        log_line = json.dumps(
+            {
+                "sessionId": "55f014",
+                "runId": "backend-logout",
+                "hypothesisId": "H_LOGOUT",
+                "location": "auth.py:logout",
+                "message": "logout ok",
+                "data": {
+                    "session_user": request.cookies.get("aiframe_session"),
+                    "tab_id": request.headers.get("x-twim-tab-id"),
+                },
+                "timestamp": int(time.time() * 1000),
+            },
+            ensure_ascii=True,
+        )
+        with open("/Users/chee/zapier ai project/.cursor/debug-55f014.log", "a", encoding="utf-8") as f:
+            f.write(log_line + "\n")
+    except OSError:
+        pass
+    # #endregion
     return {"success": True}
 
 

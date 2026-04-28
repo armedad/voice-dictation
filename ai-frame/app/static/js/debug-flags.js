@@ -19,6 +19,7 @@ const FLAG_DEFINITIONS = {
     NOTIFICATIONS: { default: true, desc: 'Notifications' },
     APP: { default: false, desc: 'General app' },
     DICTATION: { default: false, desc: 'Dictate button & hotkey UI traces' },
+    HANG: { default: true, desc: 'Hang tracing, heartbeat, long tasks' },
 };
 
 const STORAGE_KEY = 'aiframe_debug_flags';

@@ -41,6 +41,27 @@ DEFAULT_CLEANUP_SYSTEM_PROMPT = (
     "markdown, no preamble or commentary."
 )
 
+DEFAULT_DICTATION_CLEANUP_CONTEXT_TEMPLATE = (
+    "=== system (full message sent to cleanup LLM) ===\n"
+    "You rewrite spoken dictation into clear written text. Capture the user's intent, "
+    "not their literal words: tighten phrasing, remove filler and false starts, and "
+    "keep the substance. Preserve important names, numbers, and technical terms when "
+    "they matter. Do not answer questions or add new information. If the transcript is "
+    "a question, preserve it as a question. Output plain text only: no quotes, no "
+    "markdown, no preamble or commentary.\n\n"
+    "User preferences (follow these when rewriting):\n"
+    "{{ user_instructions }}\n\n"
+    "Preferred vocabulary (when the transcript clearly refers to these, use this "
+    "spelling or form exactly; do not add names or terms that are not supported by "
+    "what was said):\n"
+    "{{ vocabulary }}\n\n"
+    "Guardrails (critical): You are rewriting the transcript only. Do not answer "
+    "questions, add facts, or respond as an assistant. If the transcript is a question, "
+    "keep it as a question.\n\n"
+    "=== user (raw transcript after speech recognition) ===\n"
+    "{{ user_input }}\n"
+)
+
 DICTATION_CLEANUP_GUARDRAILS = (
     "Guardrails (critical): You are rewriting the transcript only. Do not answer "
     "questions, add facts, or respond as an assistant. If the transcript is a question, "
@@ -141,3 +162,64 @@ def format_dictation_cleanup_user_message_with_template(
     if "{raw}" not in tmpl:
         tmpl = f"{tmpl}\n\n{{raw}}"
     return tmpl.format(raw=raw)
+
+
+def render_cleanup_context_template(
+    template: str,
+    *,
+    user_instructions: Optional[str],
+    vocabulary: Optional[str],
+    user_input: str,
+) -> str:
+    """Render the full context template with placeholders."""
+    rendered = template or ""
+    instructions = (user_instructions or "").strip()
+    vocab_lines = parse_vocabulary_lines(vocabulary)
+    vocab_text = "\n".join(f"- {line}" for line in vocab_lines) if vocab_lines else ""
+    rendered = rendered.replace("{{ user_instructions }}", instructions)
+    rendered = rendered.replace("{{ vocabulary }}", vocab_text)
+    rendered = rendered.replace("{{ user_input }}", user_input)
+    return rendered
+
+
+def split_cleanup_template(rendered: str) -> tuple[str, str]:
+    """Split rendered template into system/user blocks."""
+    marker_sys = "=== system (full message sent to cleanup LLM) ==="
+    marker_user = "=== user (raw transcript after speech recognition) ==="
+    sys_idx = rendered.find(marker_sys)
+    user_idx = rendered.find(marker_user)
+    if sys_idx == -1 or user_idx == -1 or user_idx < sys_idx:
+        return "", ""
+    sys_block = rendered[sys_idx + len(marker_sys):user_idx].strip()
+    user_block = rendered[user_idx + len(marker_user):].strip()
+    return sys_block, user_block
+
+def render_cleanup_context_template(
+    template: str,
+    *,
+    user_instructions: Optional[str],
+    vocabulary: Optional[str],
+    user_input: str,
+) -> str:
+    """Render the full context template with placeholders."""
+    rendered = template or ""
+    instructions = (user_instructions or "").strip()
+    vocab_lines = parse_vocabulary_lines(vocabulary)
+    vocab_text = "\n".join(f"- {line}" for line in vocab_lines) if vocab_lines else ""
+    rendered = rendered.replace("{{ user_instructions }}", instructions)
+    rendered = rendered.replace("{{ vocabulary }}", vocab_text)
+    rendered = rendered.replace("{{ user_input }}", user_input)
+    return rendered
+
+
+def split_cleanup_template(rendered: str) -> tuple[str, str]:
+    """Split rendered template into system/user blocks."""
+    marker_sys = "=== system (full message sent to cleanup LLM) ==="
+    marker_user = "=== user (raw transcript after speech recognition) ==="
+    sys_idx = rendered.find(marker_sys)
+    user_idx = rendered.find(marker_user)
+    if sys_idx == -1 or user_idx == -1 or user_idx < sys_idx:
+        return "", ""
+    sys_block = rendered[sys_idx + len(marker_sys):user_idx].strip()
+    user_block = rendered[user_idx + len(marker_user):].strip()
+    return sys_block, user_block

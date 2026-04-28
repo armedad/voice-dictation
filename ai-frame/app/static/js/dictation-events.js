@@ -2,7 +2,7 @@
  * Dictation SSE client: update Dictate button on hotkey start/stop.
  */
 
-import { debugLog, debugWarn } from './debug-flags.js';
+import { debugLog, debugWarn, serverLog } from './debug-flags.js';
 import { refreshDictationLastContext } from './context-tab.js';
 
 let sse = null;
@@ -40,7 +40,13 @@ function setDictateButtonState(state) {
 
 export function startDictationEvents() {
     if (sse) return;
+    debugLog('HANG', 'dictation SSE start');
     sse = new EventSource('/api/dictation/events');
+    serverLog('info', '[SSE] dictation stream created', { url: '/api/dictation/events' });
+    sse.addEventListener('open', () => {
+        debugLog('HANG', 'dictation SSE open');
+        serverLog('info', '[SSE] dictation open');
+    });
     sse.addEventListener('dictation', (evt) => {
         try {
             const payload = JSON.parse(evt.data || '{}');
@@ -77,8 +83,13 @@ export function startDictationEvents() {
             debugWarn('DICTATION', 'SSE parse failed', e);
         }
     });
-    sse.addEventListener('error', () => {
+    sse.addEventListener('error', (event) => {
         debugWarn('DICTATION', 'SSE connection error');
+        debugWarn('HANG', 'dictation SSE error');
+        serverLog('error', '[SSE] dictation error', {
+            readyState: sse?.readyState,
+            type: event?.type,
+        });
     });
 }
 
@@ -86,5 +97,6 @@ export function stopDictationEvents() {
     if (sse) {
         sse.close();
         sse = null;
+        debugLog('HANG', 'dictation SSE closed');
     }
 }

@@ -41,9 +41,7 @@ class Settings(BaseModel):
     dictation_instructions: Optional[str] = None
     # Newline-separated preferred terms (proper nouns, acronyms, product names)
     dictation_vocabulary: Optional[str] = None
-    dictation_use_default_system_prompt: bool = True
-    dictation_custom_system_prompt_base: Optional[str] = None
-    dictation_cleanup_user_prompt_template: Optional[str] = None
+    dictation_cleanup_context_template: Optional[str] = None
     # Global dictation hotkeys (JSON chord or null); see core.hotkey_chord
     dictation_hotkey_toggle: Optional[dict[str, Any]] = None
     dictation_hotkey_cancel: Optional[dict[str, Any]] = None
@@ -51,11 +49,25 @@ class Settings(BaseModel):
     dictation_input_device_index: Optional[int] = None
 
 
-DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE = (
-    "If the user said the following into the dictation engine, what do you think they "
-    "intended to say?\n\n"
-    "User said (verbatim transcript, may contain errors):\n<<<\n{raw}\n>>>\n\n"
-    "Return only the rewritten text. Do not answer the question."
+DEFAULT_DICTATION_CLEANUP_CONTEXT_TEMPLATE = (
+    "=== system (full message sent to cleanup LLM) ===\n"
+    "You rewrite spoken dictation into clear written text. Capture the user's intent, "
+    "not their literal words: tighten phrasing, remove filler and false starts, and "
+    "keep the substance. Preserve important names, numbers, and technical terms when "
+    "they matter. Do not answer questions or add new information. If the transcript is "
+    "a question, preserve it as a question. Output plain text only: no quotes, no "
+    "markdown, no preamble or commentary.\n\n"
+    "User preferences (follow these when rewriting):\n"
+    "{{ user_instructions }}\n\n"
+    "Preferred vocabulary (when the transcript clearly refers to these, use this "
+    "spelling or form exactly; do not add names or terms that are not supported by "
+    "what was said):\n"
+    "{{ vocabulary }}\n\n"
+    "Guardrails (critical): You are rewriting the transcript only. Do not answer "
+    "questions, add facts, or respond as an assistant. If the transcript is a question, "
+    "keep it as a question.\n\n"
+    "=== user (raw transcript after speech recognition) ===\n"
+    "{{ user_input }}\n"
 )
 
 
@@ -74,15 +86,15 @@ def get_default_settings() -> Settings:
             with open(default_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             defaults = Settings(**data)
-            if defaults.dictation_cleanup_user_prompt_template is None:
-                defaults.dictation_cleanup_user_prompt_template = (
-                    DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE
+            if defaults.dictation_cleanup_context_template is None:
+                defaults.dictation_cleanup_context_template = (
+                    DEFAULT_DICTATION_CLEANUP_CONTEXT_TEMPLATE
                 )
             return defaults
         except (json.JSONDecodeError, Exception):
             pass
     return Settings(
-        dictation_cleanup_user_prompt_template=DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE
+        dictation_cleanup_context_template=DEFAULT_DICTATION_CLEANUP_CONTEXT_TEMPLATE
     )
 
 
@@ -254,9 +266,9 @@ class UserDataStore:
                 merged_data[key] = value
         
         settings = Settings(**merged_data)
-        if settings.dictation_cleanup_user_prompt_template is None:
-            settings.dictation_cleanup_user_prompt_template = (
-                DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE
+        if settings.dictation_cleanup_context_template is None:
+            settings.dictation_cleanup_context_template = (
+                DEFAULT_DICTATION_CLEANUP_CONTEXT_TEMPLATE
             )
         
         # Normalize URLs

@@ -3,7 +3,7 @@
  */
 
 import { api } from './api.js';
-import { debugLog, debugError } from './debug-flags.js';
+import { debugLog, debugError, debugWarn } from './debug-flags.js';
 
 let currentConversationId = null;
 let isGenerating = false;
@@ -67,6 +67,7 @@ export async function sendMessage(message, provider, model) {
     
     isGenerating = true;
     updateSendButton(true);
+    debugLog('HANG', 'chat send start');
     
     // Add user message to UI
     addMessageToUI('user', message);
@@ -76,8 +77,13 @@ export async function sendMessage(message, provider, model) {
     const assistantDiv = addMessageToUI('assistant', '');
     const contentDiv = assistantDiv.querySelector('.message-content');
     
+    let hangTimer = null;
     try {
         debugLog('CHAT', 'Sending message:', { conversationId: currentConversationId, provider, model });
+        const startedAt = performance.now();
+        hangTimer = setTimeout(() => {
+            debugWarn('HANG', 'chat request pending after 5s');
+        }, 5000);
 
         const response = await fetch('/api/dictation/cleanup-text', {
             method: 'POST',
@@ -85,12 +91,14 @@ export async function sendMessage(message, provider, model) {
             credentials: 'same-origin',
             body: JSON.stringify({ text: message })
         });
+        clearTimeout(hangTimer);
         
         if (!response.ok) {
             throw new Error('Chat request failed');
         }
         
         const result = await response.json();
+        debugLog('HANG', `chat response ok (${Math.round(performance.now() - startedAt)}ms)`);
         const fullResponse = result.text || '';
         contentDiv.textContent = fullResponse;
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -98,11 +106,16 @@ export async function sendMessage(message, provider, model) {
         
     } catch (e) {
         debugError('CHAT', 'Error:', e);
+        debugError('HANG', 'chat request failed', e?.message || e);
         contentDiv.textContent = `Error: ${e.message}`;
         contentDiv.classList.add('error');
     } finally {
+        if (hangTimer) {
+            clearTimeout(hangTimer);
+        }
         isGenerating = false;
         updateSendButton(false);
+        debugLog('HANG', 'chat send finished');
     }
 }
 
