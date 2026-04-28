@@ -5,6 +5,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
 from datetime import datetime
+import asyncio
+import threading
 import sys
 import json
 import time
@@ -74,6 +76,25 @@ def _debug_emit(location: str, message: str, data: dict) -> None:
     # endregion
 
 
+def _debug_emit_custom(location: str, message: str, data: dict, run_id: str, hypothesis_id: str) -> None:
+    # region agent log
+    payload = {
+        "sessionId": _DEBUG_SESSION_ID,
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    except OSError:
+        pass
+    # endregion
+
+
 @app.middleware("http")
 async def _debug_dictation_requests(request: Request, call_next):
     path = request.url.path
@@ -95,7 +116,99 @@ async def _debug_dictation_requests(request: Request, call_next):
             {"path": path, "status": response.status_code, "elapsed_ms": int((time.time() - t0) * 1000)},
         )
         return response
+    if path == "/" or path == "/favicon.ico" or path.startswith("/static/"):
+        t0 = time.time()
+        # #region agent log
+        _debug_emit(
+            "app/main.py:web_middleware",
+            "web request start",
+            {
+                "path": path,
+                "method": request.method,
+                "host": request.headers.get("host"),
+                "scheme": request.url.scheme,
+                "client": request.client.host if request.client else None,
+                "user_agent": request.headers.get("user-agent"),
+            },
+        )
+        # #endregion
+        response = await call_next(request)
+        # #region agent log
+        _debug_emit(
+            "app/main.py:web_middleware",
+            "web request end",
+            {
+                "path": path,
+                "status": response.status_code,
+                "elapsed_ms": int((time.time() - t0) * 1000),
+                "host": request.headers.get("host"),
+                "scheme": request.url.scheme,
+            },
+        )
+        # #endregion
+        return response
+    if path in ("/api/notifications", "/api/auth/logout", "/api/dictation/last-context"):
+        t0 = time.time()
+        loop_id = None
+        try:
+            loop_id = id(asyncio.get_running_loop())
+        except RuntimeError:
+            loop_id = None
+        _debug_emit_custom(
+            "app/main.py:api_middleware",
+            "api request start",
+            {
+                "path": path,
+                "method": request.method,
+                "host": request.headers.get("host"),
+                "scheme": request.url.scheme,
+                "client": request.client.host if request.client else None,
+                "tab_id": request.headers.get("x-twim-tab-id"),
+                "loop_id": loop_id,
+                "thread": threading.current_thread().name,
+            },
+            "server-http",
+            "H_SERVER_HTTP",
+        )
+        response = await call_next(request)
+        _debug_emit_custom(
+            "app/main.py:api_middleware",
+            "api request end",
+            {
+                "path": path,
+                "status": response.status_code,
+                "elapsed_ms": int((time.time() - t0) * 1000),
+                "tab_id": request.headers.get("x-twim-tab-id"),
+                "loop_id": loop_id,
+                "thread": threading.current_thread().name,
+            },
+            "server-http",
+            "H_SERVER_HTTP",
+        )
+        return response
     return await call_next(request)
+
+
+@app.on_event("startup")
+async def _debug_startup_event() -> None:
+    # #region agent log
+    _debug_emit(
+        "app/main.py:startup",
+        "app startup event",
+        {"thread": threading.current_thread().name},
+    )
+    # #endregion
+
+
+@app.on_event("shutdown")
+async def _debug_shutdown_event() -> None:
+    # #region agent log
+    _debug_emit(
+        "app/main.py:shutdown",
+        "app shutdown event",
+        {"thread": threading.current_thread().name},
+    )
+    # #endregion
 
 # Include routers
 app.include_router(auth.router, prefix="/api")
@@ -126,10 +239,24 @@ async def favicon_ico():
 @app.get("/")
 async def root():
     """Serve the main chat interface."""
+    # #region agent log
+    _debug_emit(
+        "app/main.py:root",
+        "root request",
+        {"thread": threading.current_thread().name},
+    )
+    # #endregion
     return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/health")
 async def health():
     """Health check endpoint."""
+    # #region agent log
+    _debug_emit(
+        "app/main.py:health",
+        "health request",
+        {"thread": threading.current_thread().name},
+    )
+    # #endregion
     return {"status": "ok", "version": "0.1.0"}

@@ -24,6 +24,7 @@ from app.services.dictation_cleanup import (
 )
 from app.services.storage import Settings, UserDataStore
 from app.services.dictation_events import publish_event
+from core.audio_cues import play_recording_start_cue, play_recording_stop_cue
 
 _DEBUG_LOG_PATH = "/Users/chee/zapier ai project/.cursor/debug-55f014.log"
 _DEBUG_SESSION_ID = "55f014"
@@ -224,9 +225,11 @@ async def _execute_dictation_from_text(
     """Run cleanup-only pipeline from a provided transcript (no mic)."""
     from core.config import load_config
     from core.models import (
-        build_dictation_cleanup_system_prompt,
+        DEFAULT_CLEANUP_SYSTEM_PROMPT,
+        DEFAULT_DICTATION_CLEANUP_CONTEXT_TEMPLATE,
         format_vocabulary_for_whisper_initial_prompt,
-        format_dictation_cleanup_user_message_with_template,
+        render_cleanup_context_template,
+        split_cleanup_template,
     )
     from core.orchestrator import run_pipeline
 
@@ -244,15 +247,6 @@ async def _execute_dictation_from_text(
     cfg = load_config()
     trans_ep = resolve_transcription_endpoint(settings.speech_model, cfg)
 
-    cleanup_system_prompt = None
-    if llm_cleanup:
-        cleanup_system_prompt = build_dictation_cleanup_system_prompt(
-            settings.dictation_instructions,
-            vocabulary=settings.dictation_vocabulary,
-            use_default_base=settings.dictation_use_default_system_prompt,
-            custom_base=settings.dictation_custom_system_prompt_base,
-        )
-
     stt_vocab_hint = format_vocabulary_for_whisper_initial_prompt(
         settings.dictation_vocabulary
     )
@@ -260,7 +254,7 @@ async def _execute_dictation_from_text(
     if not raw_transcript:
         empty_snapshot = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "system_prompt_full": cleanup_system_prompt or "",
+            "system_prompt_full": DEFAULT_CLEANUP_SYSTEM_PROMPT,
             "user_message": "",
             "response_text_full": "(No text provided)",
             "llm_cleanup_enabled": llm_cleanup,
@@ -279,13 +273,21 @@ async def _execute_dictation_from_text(
         publish_event(store.username, "dictation_empty", {"source": source})
         return {"ok": True, "cancelled": False, "text": "", "skipped_empty": True}
 
-    cleanup_user_prompt = (
-        format_dictation_cleanup_user_message_with_template(
-            raw_transcript, settings.dictation_cleanup_user_prompt_template
-        )
-        if llm_cleanup
-        else ""
+    template = (
+        settings.dictation_cleanup_context_template
+        or DEFAULT_DICTATION_CLEANUP_CONTEXT_TEMPLATE
     )
+    rendered = render_cleanup_context_template(
+        template,
+        user_instructions=settings.dictation_instructions,
+        vocabulary=settings.dictation_vocabulary,
+        user_input=raw_transcript,
+    )
+    system_block, user_block = split_cleanup_template(rendered)
+    cleanup_user_prompt = user_block if llm_cleanup else ""
+    if llm_cleanup and (not system_block or not user_block):
+        system_block = DEFAULT_CLEANUP_SYSTEM_PROMPT
+        cleanup_user_prompt = raw_transcript
 
     try:
         text = await run_pipeline(
@@ -294,7 +296,7 @@ async def _execute_dictation_from_text(
             transcription_endpoint=trans_ep,
             cleanup_endpoint=clean_ep,
             cleanup_openai_api_key=openai_key,
-            cleanup_system_prompt=cleanup_system_prompt,
+            cleanup_system_prompt=system_block or DEFAULT_CLEANUP_SYSTEM_PROMPT,
             cleanup_user_prompt=cleanup_user_prompt,
             skip_llm_cleanup=not llm_cleanup,
             transcription_initial_prompt=stt_vocab_hint,
@@ -312,7 +314,7 @@ async def _execute_dictation_from_text(
     text_out = (text or "").strip()
     snapshot = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "system_prompt_full": cleanup_system_prompt or "",
+        "system_prompt_full": system_block or DEFAULT_CLEANUP_SYSTEM_PROMPT,
         "user_message": raw_transcript,
         "response_text_full": text_out,
         "cleanup_user_prompt": cleanup_user_prompt,
@@ -332,14 +334,6 @@ async def _execute_dictation_from_text(
     return {"ok": True, "cancelled": False, "text": text_out}
 
 
-@router.get("/dictation/prompt-defaults")
-async def dictation_prompt_defaults(request: Request) -> dict[str, str]:
-    """Built-in dictation cleanup base prompt (for Context tab when using default)."""
-    if not request.cookies.get("aiframe_session"):
-        raise HTTPException(status_code=401, detail="Not logged in")
-    from core.models import DEFAULT_CLEANUP_SYSTEM_PROMPT
-
-    return {"default_cleanup_base_prompt": DEFAULT_CLEANUP_SYSTEM_PROMPT.strip()}
 
 
 def _resolve_sounddevice_input_index(settings: Settings) -> int | None:
@@ -397,16 +391,125 @@ async def dictation_last_context(
     ),
 ) -> dict[str, Any]:
     """Dictation LLM snapshot(s) for the Context tab; optional index browses history."""
+    # #region agent log
+    try:
+        log_line = json.dumps(
+            {
+                "sessionId": _DEBUG_SESSION_ID,
+                "runId": "server-context",
+                "hypothesisId": "H_SERVER_HTTP",
+                "location": "dictation.py:last-context",
+                "message": "last-context start",
+                "data": {
+                    "has_cookie": bool(request.cookies.get("aiframe_session")),
+                    "index": index,
+                    "thread": threading.current_thread().name,
+                    "tab_id": request.headers.get("x-twim-tab-id"),
+                },
+                "timestamp": int(time.time() * 1000),
+            },
+            ensure_ascii=True,
+        )
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(log_line + "\n")
+    except OSError:
+        pass
+    # #endregion
     if not request.cookies.get("aiframe_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
+    # #region agent log
+    try:
+        log_line = json.dumps(
+            {
+                "sessionId": _DEBUG_SESSION_ID,
+                "runId": "server-context",
+                "hypothesisId": "H_SERVER_HTTP",
+                "location": "dictation.py:last-context",
+                "message": "last-context cookie ok",
+                "data": {
+                    "thread": threading.current_thread().name,
+                    "tab_id": request.headers.get("x-twim-tab-id"),
+                },
+                "timestamp": int(time.time() * 1000),
+            },
+            ensure_ascii=True,
+        )
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(log_line + "\n")
+    except OSError:
+        pass
+    # #endregion
     store = get_user_store(request)
+    # #region agent log
+    try:
+        log_line = json.dumps(
+            {
+                "sessionId": _DEBUG_SESSION_ID,
+                "runId": "server-context",
+                "hypothesisId": "H_SERVER_HTTP",
+                "location": "dictation.py:last-context",
+                "message": "last-context store ready",
+                "data": {
+                    "data_dir": str(store.data_dir),
+                    "tab_id": request.headers.get("x-twim-tab-id"),
+                },
+                "timestamp": int(time.time() * 1000),
+            },
+            ensure_ascii=True,
+        )
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(log_line + "\n")
+    except OSError:
+        pass
+    # #endregion
     entries = store.load_dictation_history_entries()
+    # #region agent log
+    try:
+        log_line = json.dumps(
+            {
+                "sessionId": _DEBUG_SESSION_ID,
+                "runId": "server-context",
+                "hypothesisId": "H_SERVER_HTTP",
+                "location": "dictation.py:last-context",
+                "message": "last-context entries loaded",
+                "data": {
+                    "count": len(entries),
+                    "tab_id": request.headers.get("x-twim-tab-id"),
+                },
+                "timestamp": int(time.time() * 1000),
+            },
+            ensure_ascii=True,
+        )
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(log_line + "\n")
+    except OSError:
+        pass
+    # #endregion
     total = len(entries)
     last_ts: str | None = None
     if total:
         last_ts = (entries[-1].get("timestamp") or None) if isinstance(entries[-1], dict) else None
 
     if total == 0:
+        # #region agent log
+        try:
+            log_line = json.dumps(
+                {
+                    "sessionId": _DEBUG_SESSION_ID,
+                    "runId": "server-context",
+                    "hypothesisId": "H_SERVER_HTTP",
+                    "location": "dictation.py:last-context",
+                    "message": "last-context empty",
+                "data": {"tab_id": request.headers.get("x-twim-tab-id")},
+                    "timestamp": int(time.time() * 1000),
+                },
+                ensure_ascii=True,
+            )
+            with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(log_line + "\n")
+        except OSError:
+            pass
+        # #endregion
         return {
             "snapshot": {},
             "verbatim_request": "",
@@ -422,6 +525,29 @@ async def dictation_last_context(
     snap = entries[resolved]
     response = snap.get("response_text_full") or ""
     cur_ts = snap.get("timestamp") or None
+    # #region agent log
+    try:
+        log_line = json.dumps(
+            {
+                "sessionId": _DEBUG_SESSION_ID,
+                "runId": "server-context",
+                "hypothesisId": "H_SERVER_HTTP",
+                "location": "dictation.py:last-context",
+                "message": "last-context ok",
+                "data": {
+                    "resolved": resolved,
+                    "total": total,
+                    "tab_id": request.headers.get("x-twim-tab-id"),
+                },
+                "timestamp": int(time.time() * 1000),
+            },
+            ensure_ascii=True,
+        )
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(log_line + "\n")
+    except OSError:
+        pass
+    # #endregion
     return {
         "snapshot": snap,
         "verbatim_request": _verbatim_request_for_context_tab(snap),
@@ -454,10 +580,11 @@ async def _execute_dictation(
 
     from core.config import load_config
     from core.models import (
-        build_dictation_cleanup_system_prompt,
+        DEFAULT_CLEANUP_SYSTEM_PROMPT,
+        DEFAULT_DICTATION_CLEANUP_CONTEXT_TEMPLATE,
         format_vocabulary_for_whisper_initial_prompt,
-        format_dictation_cleanup_user_message,
-        format_dictation_cleanup_user_message_with_template,
+        render_cleanup_context_template,
+        split_cleanup_template,
     )
     from core.orchestrator import run_pipeline
 
@@ -477,13 +604,11 @@ async def _execute_dictation(
     trans_ep = resolve_transcription_endpoint(settings.speech_model, cfg)
 
     cleanup_system_prompt = None
-    if llm_cleanup:
-        cleanup_system_prompt = build_dictation_cleanup_system_prompt(
-            settings.dictation_instructions,
-            vocabulary=settings.dictation_vocabulary,
-            use_default_base=settings.dictation_use_default_system_prompt,
-            custom_base=settings.dictation_custom_system_prompt_base,
-        )
+    cleanup_user_prompt = None
+    template = (
+        settings.dictation_cleanup_context_template
+        or DEFAULT_DICTATION_CLEANUP_CONTEXT_TEMPLATE
+    )
 
     stt_vocab_hint = format_vocabulary_for_whisper_initial_prompt(
         settings.dictation_vocabulary
@@ -499,6 +624,7 @@ async def _execute_dictation(
         {"source": source, "user": store.username, "seconds": RECORD_SECONDS},
     )
     publish_event(store.username, "dictation_start", {"source": source})
+    play_recording_start_cue()
     cancel_event.clear()
     _dictation_stop.clear()
     print("start dictating", flush=True)
@@ -523,6 +649,9 @@ async def _execute_dictation(
                 status_code=500,
                 detail=f"Microphone capture failed: {e!s}. {hint}",
             ) from e
+
+        if not cancelled and wav:
+            play_recording_stop_cue()
 
         if cancelled or not wav:
             _debug_emit(
@@ -551,21 +680,27 @@ async def _execute_dictation(
 
         capture_audit: dict[str, Any] = {}
         try:
+            def _build_cleanup_prompts(raw: str) -> tuple[str, str]:
+                rendered_ctx = render_cleanup_context_template(
+                    template,
+                    user_instructions=settings.dictation_instructions,
+                    vocabulary=settings.dictation_vocabulary,
+                    user_input=raw,
+                )
+                sys_block, user_block = split_cleanup_template(rendered_ctx)
+                if not sys_block or not user_block:
+                    return DEFAULT_CLEANUP_SYSTEM_PROMPT, raw
+                return sys_block, user_block
+
             text = await run_pipeline(
                 wav,
                 "dictation.wav",
                 transcription_endpoint=trans_ep,
                 cleanup_endpoint=clean_ep,
                 cleanup_openai_api_key=openai_key,
-                cleanup_system_prompt=cleanup_system_prompt,
+                cleanup_system_prompt=None,
                 cleanup_user_prompt=None,
-                cleanup_user_prompt_builder=(
-                    (lambda raw: format_dictation_cleanup_user_message_with_template(
-                        raw, settings.dictation_cleanup_user_prompt_template
-                    ))
-                    if llm_cleanup
-                    else None
-                ),
+                cleanup_prompt_builder=_build_cleanup_prompts if llm_cleanup else None,
                 skip_llm_cleanup=not llm_cleanup,
                 transcription_initial_prompt=stt_vocab_hint,
                 capture_audit=capture_audit,
@@ -583,7 +718,7 @@ async def _execute_dictation(
             raw_tr = (capture_audit.get("raw_transcript") or "").strip()
             empty_snapshot = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "system_prompt_full": cleanup_system_prompt or "",
+                "system_prompt_full": DEFAULT_CLEANUP_SYSTEM_PROMPT,
                 "user_message": raw_tr,
                 "response_text_full": "(No speech detected)",
                 "llm_cleanup_enabled": llm_cleanup,
@@ -607,17 +742,27 @@ async def _execute_dictation(
             return {"ok": True, "cancelled": False, "text": "", "skipped_empty": True}
 
         raw_tr = capture_audit.get("raw_transcript", "")
-        cleanup_user_prompt = (
-            format_dictation_cleanup_user_message_with_template(
-                raw_tr, settings.dictation_cleanup_user_prompt_template
+        if llm_cleanup:
+            rendered = render_cleanup_context_template(
+                template,
+                user_instructions=settings.dictation_instructions,
+                vocabulary=settings.dictation_vocabulary,
+                user_input=raw_tr,
             )
-            if llm_cleanup
-            else ""
-        )
+            system_block, user_block = split_cleanup_template(rendered)
+            if not system_block or not user_block:
+                cleanup_system_prompt = DEFAULT_CLEANUP_SYSTEM_PROMPT
+                cleanup_user_prompt = raw_tr
+            else:
+                cleanup_system_prompt = system_block
+                cleanup_user_prompt = user_block
+        else:
+            cleanup_system_prompt = DEFAULT_CLEANUP_SYSTEM_PROMPT
+            cleanup_user_prompt = ""
         text_out = (text or "").strip()
         snapshot = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "system_prompt_full": cleanup_system_prompt or "",
+            "system_prompt_full": cleanup_system_prompt or DEFAULT_CLEANUP_SYSTEM_PROMPT,
             "user_message": raw_tr,
             "response_text_full": text_out,
             "cleanup_user_prompt": cleanup_user_prompt,

@@ -3,7 +3,15 @@
  */
 
 import { api } from './api.js';
-import { debugLog, debugError, getDebugFlagDefinitions, setDebugFlag, setAllDebugFlags, DEBUG } from './debug-flags.js';
+import {
+    debugLog,
+    debugError,
+    debugWarn,
+    getDebugFlagDefinitions,
+    setDebugFlag,
+    setAllDebugFlags,
+    DEBUG,
+} from './debug-flags.js';
 
 let currentSettings = {};
 
@@ -16,7 +24,6 @@ let modelsCache = { groups: [], default: {} };
 let speechModelsCache = { groups: [], default: {}, errors: [] };
 let dictationInstructionsDebounce = null;
 let dictationVocabularyDebounce = null;
-let dictationCleanupTemplateDebounce = null;
 
 /** @type {'toggle' | 'cancel' | null} */
 let dictationHotkeyCaptureField = null;
@@ -291,6 +298,7 @@ function updateDictationInputDeviceHint() {
  * Populate Preferences microphone list and sync with saved settings.
  */
 export async function refreshDictationInputDevices() {
+    debugLog('HANG', 'refreshDictationInputDevices start');
     const sel = document.getElementById('dictation-input-device-select');
     if (!sel) return;
 
@@ -301,8 +309,15 @@ export async function refreshDictationInputDevices() {
     loading.textContent = 'Loading…';
     sel.appendChild(loading);
 
+    let hangTimer = null;
     try {
+        const startedAt = performance.now();
+        hangTimer = setTimeout(() => {
+            debugWarn('HANG', 'dictation/audio-input pending after 5s');
+        }, 5000);
         const data = await api('dictation/audio-input');
+        clearTimeout(hangTimer);
+        debugLog('HANG', `dictation/audio-input ok (${Math.round(performance.now() - startedAt)}ms)`);
         _dictationAudioInputCache = data;
         sel.innerHTML = '';
 
@@ -350,7 +365,11 @@ export async function refreshDictationInputDevices() {
         sel.appendChild(o);
         updateDictationInputDeviceHint();
     } finally {
+        if (hangTimer) {
+            clearTimeout(hangTimer);
+        }
         sel.disabled = false;
+        debugLog('HANG', 'refreshDictationInputDevices done');
     }
 }
 
@@ -359,12 +378,15 @@ export async function refreshDictationInputDevices() {
  */
 export async function loadSettings() {
     try {
+        debugLog('HANG', 'loadSettings start');
         currentSettings = await api('/api/settings');
         debugLog('SETTINGS', 'Loaded settings:', currentSettings);
         applySettings(currentSettings);
+        debugLog('HANG', 'loadSettings done');
         return currentSettings;
     } catch (e) {
         debugError('SETTINGS', 'Failed to load:', e);
+        debugError('HANG', 'loadSettings failed', e?.message || e);
         return {};
     }
 }
@@ -374,6 +396,7 @@ export async function loadSettings() {
  */
 export async function saveSettings(updates) {
     try {
+        debugLog('HANG', 'saveSettings start');
         currentSettings = await api('/api/settings', {
             method: 'PATCH',
             body: updates
@@ -383,9 +406,11 @@ export async function saveSettings(updates) {
         window.dispatchEvent(
             new CustomEvent('aiframe-settings-saved', { detail: { ...currentSettings } })
         );
+        debugLog('HANG', 'saveSettings done');
         return currentSettings;
     } catch (e) {
         debugError('SETTINGS', 'Failed to save:', e);
+        debugError('HANG', 'saveSettings failed', e?.message || e);
         throw e;
     }
 }
@@ -427,14 +452,6 @@ function applySettings(settings) {
             settings.dictation_instructions != null
                 ? settings.dictation_instructions
                 : '';
-    }
-    const cleanupTemplate = document.getElementById('dictation-cleanup-template');
-    if (cleanupTemplate) {
-        const rawTemplate = settings.dictation_cleanup_user_prompt_template;
-        const hasTemplate = rawTemplate != null && String(rawTemplate).trim().length > 0;
-        cleanupTemplate.value = hasTemplate
-            ? rawTemplate
-            : `If the user said the following into the dictation engine, what do you think they intended to say?\n\nUser said (verbatim transcript, may contain errors):\n<<<\n{raw}\n>>>\n\nReturn only the rewritten text. Do not answer the question.`;
     }
     const dictationVocab = document.getElementById('dictation-vocabulary');
     if (dictationVocab) {
@@ -503,6 +520,7 @@ function populateModelSelect(selectElement, defaultValue) {
  */
 export async function loadModels() {
     try {
+        debugLog('HANG', 'loadModels start');
         modelsCache = await api('/api/models');
         debugLog('MODELS', 'Loaded models:', modelsCache.groups.length, 'groups');
         
@@ -528,8 +546,10 @@ export async function loadModels() {
             }
         }
         
+        debugLog('HANG', 'loadModels done');
     } catch (e) {
         debugError('MODELS', 'Failed to load:', e);
+        debugError('HANG', 'loadModels failed', e?.message || e);
     }
 }
 
@@ -581,6 +601,7 @@ function populateSpeechModelSelect(selectElement, selectedValue) {
  */
 export async function loadSpeechModels() {
     try {
+        debugLog('HANG', 'loadSpeechModels start');
         speechModelsCache = await api('speech-models');
         debugLog(
             'SPEECH',
@@ -607,9 +628,11 @@ export async function loadSpeechModels() {
             }
         }
 
+        debugLog('HANG', 'loadSpeechModels done');
         return speechModelsCache;
     } catch (e) {
         debugError('SPEECH', 'Failed to load speech models:', e);
+        debugError('HANG', 'loadSpeechModels failed', e?.message || e);
         return speechModelsCache;
     }
 }
@@ -1152,31 +1175,6 @@ export function initSettings() {
         });
     }
 
-    const cleanupTemplate = document.getElementById('dictation-cleanup-template');
-    const cleanupTemplateSaved = document.getElementById('dictation-cleanup-template-saved');
-    if (cleanupTemplate) {
-        cleanupTemplate.addEventListener('input', () => {
-            if (dictationCleanupTemplateDebounce) {
-                clearTimeout(dictationCleanupTemplateDebounce);
-            }
-            dictationCleanupTemplateDebounce = setTimeout(async () => {
-                dictationCleanupTemplateDebounce = null;
-                try {
-                    await saveSettings({
-                        dictation_cleanup_user_prompt_template: cleanupTemplate.value,
-                    });
-                    if (cleanupTemplateSaved) {
-                        cleanupTemplateSaved.hidden = false;
-                        setTimeout(() => {
-                            cleanupTemplateSaved.hidden = true;
-                        }, 1200);
-                    }
-                } catch (e) {
-                    debugError('SETTINGS', 'Cleanup template save failed:', e);
-                }
-            }, 600);
-        });
-    }
     
     // Debug flags all on/off
     const allOn = document.getElementById('debug-flags-all-on');

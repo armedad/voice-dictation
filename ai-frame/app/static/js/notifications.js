@@ -3,16 +3,40 @@
  */
 
 import { api } from './api.js';
-import { debugLog, debugError, debugWarn } from './debug-flags.js';
+import { debugLog, debugError, debugWarn, serverLog } from './debug-flags.js';
 
 let sse = null;
+let notificationsAbortController = null;
+
+export function cancelNotificationsFetch(reason = 'manual') {
+    if (!notificationsAbortController) return;
+    try {
+        notificationsAbortController.abort();
+    } catch (_e) {}
+    notificationsAbortController = null;
+    debugWarn('NOTIFICATIONS', `notifications fetch aborted (${reason})`);
+    serverLog('warn', '[NOTIFICATIONS] fetch aborted', { reason });
+    // #region agent log
+    fetch('http://127.0.0.1:7313/ingest/bebe4c4e-4978-4271-b068-86f25a65a1d8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'55f014'},body:JSON.stringify({sessionId:'55f014',location:'notifications.js:cancelNotificationsFetch',message:'notifications fetch aborted',data:{reason},timestamp:Date.now(),runId:'frontend-logout',hypothesisId:'H_LOGOUT'})}).catch(()=>{});
+    // #endregion
+}
 
 /**
  * Fetch notifications and update UI
  */
 export async function loadNotifications() {
     try {
-        const result = await api('/api/notifications');
+        if (notificationsAbortController) {
+            cancelNotificationsFetch('superseded');
+        }
+        notificationsAbortController = new AbortController();
+        const startedAt = performance.now();
+        const hangTimer = setTimeout(() => {
+            debugWarn('HANG', 'notifications load pending after 5s');
+        }, 5000);
+        const result = await api('/api/notifications', { signal: notificationsAbortController.signal });
+        clearTimeout(hangTimer);
+        debugLog('HANG', `notifications load ok (${Math.round(performance.now() - startedAt)}ms)`);
         debugLog('NOTIFICATIONS', 'Loaded notifications:', result.notifications.length);
 
         const undismissed = result.notifications.filter((n) => !n.dismissed);
@@ -25,8 +49,15 @@ export async function loadNotifications() {
 
         return result.notifications;
     } catch (e) {
+        if (e?.name === 'AbortError') {
+            debugWarn('NOTIFICATIONS', 'notifications load aborted');
+            return [];
+        }
         debugError('NOTIFICATIONS', 'Failed to load:', e);
+        debugError('HANG', 'notifications load failed', e?.message || e);
         return [];
+    } finally {
+        notificationsAbortController = null;
     }
 }
 
@@ -99,15 +130,23 @@ export function startNotificationStream() {
     if (sse) return;
 
     sse = new EventSource('/api/notifications/stream');
+    serverLog('info', '[SSE] notifications stream created', { url: '/api/notifications/stream' });
     sse.addEventListener('open', () => {
+        debugLog('HANG', 'notifications SSE open');
         debugLog('NOTIFICATIONS', 'SSE connected');
+        serverLog('info', '[SSE] notifications open');
         loadNotifications();
     });
     sse.addEventListener('notifications', () => {
         loadNotifications();
     });
-    sse.addEventListener('error', () => {
+    sse.addEventListener('error', (event) => {
         debugWarn('NOTIFICATIONS', 'SSE connection error');
+        debugWarn('HANG', 'notifications SSE error');
+        serverLog('error', '[SSE] notifications error', {
+            readyState: sse?.readyState,
+            type: event?.type,
+        });
     });
 }
 
@@ -118,6 +157,7 @@ export function stopNotificationStream() {
     if (sse) {
         sse.close();
         sse = null;
+        debugLog('HANG', 'notifications SSE closed');
         debugLog('NOTIFICATIONS', 'SSE closed');
     }
 }

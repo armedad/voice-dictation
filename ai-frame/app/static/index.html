@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ai-frame</title>
+    <title>twim</title>
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
     <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="stylesheet" href="/static/styles.css">
@@ -15,10 +15,14 @@
     <!-- Login Screen -->
     <div class="login-screen" id="login-screen">
         <div class="login-container">
-            <div class="login-logo">ai-frame</div>
+            <div class="login-logo">twim</div>
             <div class="login-form" id="login-form">
                 <input type="text" id="login-username" placeholder="Username" autocomplete="username">
                 <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+                <label class="login-show-password">
+                    <input type="checkbox" id="login-show-password">
+                    <span>Show password</span>
+                </label>
                 <button id="login-btn" class="btn-primary">Log In</button>
                 <div class="login-divider">or</div>
                 <button id="show-register-btn" class="btn-secondary">Create Account</button>
@@ -52,7 +56,7 @@
         <!-- Header -->
         <header class="header">
             <div class="header-left">
-                <h1 class="logo">ai-frame</h1>
+                <h1 class="logo">twim</h1>
                 <button id="dictate-10s-btn" class="btn-secondary btn-dictate" type="button" title="Record from mic until you stop, then type cleaned text at the focused field in any app (macOS; grant Accessibility to Python)">Dictate</button>
                 <button id="new-chat-btn" class="btn-icon" title="New Chat">
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -123,12 +127,7 @@
                             <textarea id="dictation-instructions" class="dictation-instructions-textarea" rows="10" placeholder="e.g. Write in first person. Keep paragraphs short. Use American spelling."></textarea>
                             <p id="dictation-instructions-saved" class="dictation-instructions-saved" hidden>Saved.</p>
                         </div>
-                        <div class="settings-section profile-dictation-template">
-                            <h3 class="settings-section-title">Dictation cleanup template</h3>
-                            <p class="setting-hint">Template sent as the <strong>user message</strong> to the cleanup LLM. Use <code>{raw}</code> where the transcript should be inserted.</p>
-                            <textarea id="dictation-cleanup-template" class="dictation-instructions-textarea" rows="8" placeholder="Use {raw} to insert the transcript."></textarea>
-                            <p id="dictation-cleanup-template-saved" class="dictation-instructions-saved" hidden>Saved.</p>
-                        </div>
+                        
                         
                     </div>
                     <div class="profile-column">
@@ -146,14 +145,10 @@
                 <div class="context-grid">
                     <div class="context-column">
                         <div class="context-section context-base-section">
-                            <h2 class="context-section-title">Dictation cleanup — base system prompt</h2>
-                            <p class="setting-hint">Replaces only the <strong>base</strong> segment. Vocabulary and Dictation instructions are always merged after this (see Settings).</p>
-                            <label class="setting-checkbox-label">
-                                <input type="checkbox" id="dictation-use-default-prompt" checked>
-                                <span>Use built-in default base prompt</span>
-                            </label>
-                            <textarea id="dictation-context-base-prompt" class="dictation-instructions-textarea context-base-textarea" rows="8" placeholder="Custom base prompt when default is off"></textarea>
-                            <p id="dictation-context-base-saved" class="dictation-instructions-saved" hidden>Saved.</p>
+                            <h2 class="context-section-title">Dictation cleanup — context template</h2>
+                            <p class="setting-hint">Full template sent to the cleanup LLM. Use <code>{{ user_instructions }}</code>, <code>{{ vocabulary }}</code>, and <code>{{ user_input }}</code> placeholders.</p>
+                            <textarea id="dictation-context-template" class="dictation-instructions-textarea context-base-textarea" rows="8" placeholder="Full cleanup template"></textarea>
+                            <p id="dictation-context-template-saved" class="dictation-instructions-saved" hidden>Saved.</p>
                         </div>
                     </div>
                     <div class="context-column">

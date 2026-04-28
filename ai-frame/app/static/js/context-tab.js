@@ -4,9 +4,9 @@
 
 import { api } from './api.js';
 import { saveSettings, getCurrentSettings } from './settings.js';
-import { debugLog, debugError } from './debug-flags.js';
+import { debugLog, debugError, debugWarn } from './debug-flags.js';
 
-let contextBaseDebounce = null;
+let contextTemplateDebounce = null;
 /** Resolved server index for the row shown in the Context tab (0 = oldest). */
 let contextHistoryIndex = null;
 /** Total dictation snapshots (from last API response). */
@@ -66,13 +66,21 @@ export async function refreshDictationLastContext(options = {}) {
     const reqEl = document.getElementById('dictation-last-request');
     const resEl = document.getElementById('dictation-last-response');
     if (!reqEl || !resEl) return;
+    debugLog('HANG', 'refresh dictation context start', { resetToLatest });
     if (resetToLatest) {
         contextHistoryIndex = null;
     }
     const q =
         contextHistoryIndex != null ? `dictation/last-context?index=${contextHistoryIndex}` : 'dictation/last-context';
+    let hangTimer = null;
     try {
+        const startedAt = performance.now();
+        hangTimer = setTimeout(() => {
+            debugWarn('HANG', 'dictation context request pending after 5s');
+        }, 5000);
         const data = await api(q);
+        clearTimeout(hangTimer);
+        debugLog('HANG', `dictation context response ok (${Math.round(performance.now() - startedAt)}ms)`);
         reqEl.value = data.verbatim_request || '';
         resEl.value = data.response_text_full || '';
         if (typeof data.history_index === 'number') {
@@ -84,65 +92,52 @@ export async function refreshDictationLastContext(options = {}) {
         _updateContextHistoryChrome(data);
     } catch (e) {
         debugError('CONTEXT', 'Failed to load last dictation context:', e);
+        debugError('HANG', 'dictation context request failed', e?.message || e);
+    } finally {
+        if (hangTimer) {
+            clearTimeout(hangTimer);
+        }
     }
 }
 
 export async function syncContextTabFromSettings(forceRefresh = false) {
-    const cb = document.getElementById('dictation-use-default-prompt');
-    const ta = document.getElementById('dictation-context-base-prompt');
-    if (!cb || !ta) return;
+    const ta = document.getElementById('dictation-context-template');
+    if (!ta) return;
 
     let s = getCurrentSettings();
     if (forceRefresh || !Object.keys(s).length) {
         try {
+            debugLog('HANG', 'context settings refresh start');
             s = await api('/api/settings');
+            debugLog('HANG', 'context settings refresh done');
         } catch (e) {
             debugError('CONTEXT', 'Failed to refresh settings:', e);
+            debugError('HANG', 'context settings refresh failed', e?.message || e);
         }
     }
-    const useDefault = s.dictation_use_default_system_prompt !== false;
-    cb.checked = useDefault;
-
     try {
-        if (useDefault) {
-            const d = await api('dictation/prompt-defaults');
-            ta.value = d.default_cleanup_base_prompt || '';
-            ta.readOnly = true;
-        } else {
-            ta.readOnly = false;
-            ta.value =
-                s.dictation_custom_system_prompt_base != null
-                    ? s.dictation_custom_system_prompt_base
-                    : '';
-        }
+        ta.readOnly = false;
+        ta.value =
+            s.dictation_cleanup_context_template != null
+                ? s.dictation_cleanup_context_template
+                : '';
 
     } catch (e) {
         debugError('CONTEXT', 'Failed to sync prompt defaults:', e);
     }
 }
 
-async function onToggleUseDefault() {
-    const cb = document.getElementById('dictation-use-default-prompt');
-    if (!cb) return;
-    try {
-        await saveSettings({ dictation_use_default_system_prompt: cb.checked });
-        await syncContextTabFromSettings(true);
-    } catch (e) {
-        debugError('CONTEXT', 'Toggle save failed:', e);
-    }
-}
-
-function scheduleSaveCustomBase() {
-    if (contextBaseDebounce) clearTimeout(contextBaseDebounce);
-    contextBaseDebounce = setTimeout(async () => {
-        contextBaseDebounce = null;
-        const ta = document.getElementById('dictation-context-base-prompt');
-        if (!ta || ta.readOnly) return;
+function scheduleSaveTemplate() {
+    if (contextTemplateDebounce) clearTimeout(contextTemplateDebounce);
+    contextTemplateDebounce = setTimeout(async () => {
+        contextTemplateDebounce = null;
+        const ta = document.getElementById('dictation-context-template');
+        if (!ta) return;
         try {
             await saveSettings({
-                dictation_custom_system_prompt_base: ta.value,
+                dictation_cleanup_context_template: ta.value,
             });
-            const hint = document.getElementById('dictation-context-base-saved');
+            const hint = document.getElementById('dictation-context-template-saved');
             if (hint) {
                 hint.hidden = false;
                 setTimeout(() => {
@@ -150,7 +145,7 @@ function scheduleSaveCustomBase() {
                 }, 1200);
             }
         } catch (e) {
-            debugError('CONTEXT', 'Custom base save failed:', e);
+            debugError('CONTEXT', 'Template save failed:', e);
         }
     }, 600);
 }
@@ -205,12 +200,8 @@ export function initContextTab() {
         showContext().catch((e) => debugError('CONTEXT', e));
     });
 
-    document.getElementById('dictation-use-default-prompt')?.addEventListener('change', () => {
-        onToggleUseDefault().catch((e) => debugError('CONTEXT', e));
-    });
-
-    document.getElementById('dictation-context-base-prompt')?.addEventListener('input', () => {
-        scheduleSaveCustomBase();
+    document.getElementById('dictation-context-template')?.addEventListener('input', () => {
+        scheduleSaveTemplate();
     });
 
     document.getElementById('dictation-last-response-copy')?.addEventListener('click', async () => {

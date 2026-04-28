@@ -1,5 +1,7 @@
 """Notification endpoints for push notifications."""
 import asyncio
+import threading
+import time
 import json
 
 from fastapi import APIRouter, HTTPException, Request
@@ -60,9 +62,57 @@ async def notifications_stream(request: Request) -> EventSourceResponse:
 @router.get("/notifications")
 async def list_notifications(request: Request):
     """List user notifications (undismissed first)."""
+    # #region agent log
+    try:
+        log_line = json.dumps(
+            {
+                "sessionId": "55f014",
+                "runId": "server-notifications",
+                "hypothesisId": "H_SERVER_HTTP",
+                "location": "notifications.py:list_notifications",
+                "message": "notifications request start",
+                "data": {
+                    "has_cookie": bool(request.cookies.get("aiframe_session")),
+                    "thread": threading.current_thread().name,
+                    "loop_id": id(asyncio.get_running_loop()),
+                    "tab_id": request.headers.get("x-twim-tab-id"),
+                },
+                "timestamp": int(time.time() * 1000),
+            },
+            ensure_ascii=True,
+        )
+        with open("/Users/chee/zapier ai project/.cursor/debug-55f014.log", "a", encoding="utf-8") as f:
+            f.write(log_line + "\n")
+    except OSError:
+        pass
+    # #endregion
     store = get_user_store(request)
     notifications = store.get_notifications()
     notifications.sort(key=lambda n: (n.dismissed, n.created_at))
+    # #region agent log
+    try:
+        log_line = json.dumps(
+            {
+                "sessionId": "55f014",
+                "runId": "server-notifications",
+                "hypothesisId": "H_SERVER_HTTP",
+                "location": "notifications.py:list_notifications",
+                "message": "notifications request end",
+                "data": {
+                    "count": len(notifications),
+                    "thread": threading.current_thread().name,
+                    "loop_id": id(asyncio.get_running_loop()),
+                    "tab_id": request.headers.get("x-twim-tab-id"),
+                },
+                "timestamp": int(time.time() * 1000),
+            },
+            ensure_ascii=True,
+        )
+        with open("/Users/chee/zapier ai project/.cursor/debug-55f014.log", "a", encoding="utf-8") as f:
+            f.write(log_line + "\n")
+    except OSError:
+        pass
+    # #endregion
     return {"notifications": [n.model_dump() for n in notifications]}
 
 
