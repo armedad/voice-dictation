@@ -115,6 +115,7 @@ export async function syncContextTabFromSettings(forceRefresh = false) {
                     ? s.dictation_custom_system_prompt_base
                     : '';
         }
+
     } catch (e) {
         debugError('CONTEXT', 'Failed to sync prompt defaults:', e);
     }
