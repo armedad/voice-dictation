@@ -640,12 +640,25 @@ async def _execute_dictation(
         try:
             await asyncio.to_thread(type_text_strict, text_out)
         except TypingInjectionError as e:
-            raise HTTPException(status_code=500, detail=str(e)) from e
+            _dictation_server_log(
+                "dictation typing failed",
+                {"source": source, "user": store.username, "error": str(e)},
+            )
+            publish_event(
+                store.username,
+                "dictation_typing_failed",
+                {"source": source, "error": str(e)},
+            )
         except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Synthetic typing failed: {e!s}",
-            ) from e
+            _dictation_server_log(
+                "dictation typing failed",
+                {"source": source, "user": store.username, "error": str(e)},
+            )
+            publish_event(
+                store.username,
+                "dictation_typing_failed",
+                {"source": source, "error": str(e)},
+            )
 
         publish_event(store.username, "dictation_done", {"source": source})
         return {"ok": True, "cancelled": False, "text": text_out}
@@ -681,10 +694,12 @@ async def record_and_type(request: Request) -> dict[str, Any]:
             {"wait_ms": int((time.time() - lock_start) * 1000), "user": store.username},
         )
         _dictation_active = True
-        out = await _execute_dictation(
-            store, cancel_event=_dictation_cancel, source="record_and_type"
-        )
-        _dictation_active = False
+        try:
+            out = await _execute_dictation(
+                store, cancel_event=_dictation_cancel, source="record_and_type"
+            )
+        finally:
+            _dictation_active = False
     if out.get("cancelled"):
         return {"ok": False, "cancelled": True, "text": ""}
     if out.get("skipped_empty"):
@@ -698,15 +713,11 @@ async def dictation_cleanup_text(request: Request, body: DictationTextBody) -> d
     if not request.cookies.get("aiframe_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
     store = get_user_store(request)
-    global _dictation_active
     if _dictation_active:
         _emit_overlap(store, "cleanup_text")
-    async with _dictation_session_lock:
-        _dictation_active = True
-        out = await _execute_dictation_from_text(
-            store, raw_text=body.text, source="cleanup_text"
-        )
-        _dictation_active = False
+    out = await _execute_dictation_from_text(
+        store, raw_text=body.text, source="cleanup_text"
+    )
     if out.get("skipped_empty"):
         return {"ok": True, "text": "", "skipped_empty": True}
     return {"ok": True, "text": out.get("text", "")}
@@ -858,10 +869,12 @@ async def dictation_hotkey_toggle(
             {"wait_ms": int((time.time() - lock_start) * 1000), "user": body.username},
         )
         _dictation_active = True
-        out = await _execute_dictation(
-            store, cancel_event=_dictation_cancel, source="hotkey_toggle"
-        )
-        _dictation_active = False
+        try:
+            out = await _execute_dictation(
+                store, cancel_event=_dictation_cancel, source="hotkey_toggle"
+            )
+        finally:
+            _dictation_active = False
     if out.get("cancelled"):
         _dictation_server_log(
             "dictation hotkey toggle finished cancelled",
