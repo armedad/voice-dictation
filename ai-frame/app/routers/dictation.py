@@ -153,6 +153,26 @@ def _dictation_server_log(message: str, data: dict[str, Any] | None = None) -> N
         pass
 
 
+def _effective_dictation_llm_cleanup(settings: Settings, *, user_for_log: str) -> bool:
+    """
+    Honor ``dictation_llm_cleanup_enabled`` only when a default chat model is configured.
+
+    If cleanup is on but ``default_model`` is empty, skip cleanup for this run (transcription
+    only) so hotkey / dictation still works; log so the user can fix Settings.
+    """
+    if not settings.dictation_llm_cleanup_enabled:
+        return False
+    if not (settings.default_model or "").strip():
+        if user_for_log.strip():
+            _dictation_server_log(
+                "Dictation LLM cleanup is enabled but no default model is set; "
+                "running transcription only (pick a model in Settings → Models or disable cleanup).",
+                {"user": user_for_log.strip()},
+            )
+        return False
+    return True
+
+
 def _store_for_username(username: str) -> UserDataStore:
     u = (username or "").strip()
     if not u or users.get_user(u) is None:
@@ -231,7 +251,9 @@ async def _execute_dictation_from_text(
     from core.orchestrator import run_pipeline
 
     settings = store.get_settings()
-    llm_cleanup = settings.dictation_llm_cleanup_enabled
+    llm_cleanup = _effective_dictation_llm_cleanup(
+        settings, user_for_log=store.username or ""
+    )
 
     clean_ep = None
     openai_key = None
@@ -463,7 +485,9 @@ async def _execute_dictation(
 
     settings = store.get_settings()
     sd_device = _resolve_sounddevice_input_index(settings)
-    llm_cleanup = settings.dictation_llm_cleanup_enabled
+    llm_cleanup = _effective_dictation_llm_cleanup(
+        settings, user_for_log=store.username or ""
+    )
 
     clean_ep = None
     openai_key = None
