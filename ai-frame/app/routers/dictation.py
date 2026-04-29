@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import secrets
+import subprocess
 import sys
 import threading
 import time
@@ -151,6 +152,48 @@ def _dictation_server_log(message: str, data: dict[str, Any] | None = None) -> N
         write_to_log_file("INFO", message, data)
     except Exception:
         pass
+
+
+def _maybe_dictation_ui_sound(kind: str) -> None:
+    """
+    Optional short OS chime when dictation recording starts (``start``) or when the
+    microphone capture phase ends (``end`` — before STT, cleanup, or typing).
+
+    Disable with ``VOICE_DICTATION_UI_SOUNDS=0``.
+    """
+    raw = os.environ.get("VOICE_DICTATION_UI_SOUNDS", "1").strip().lower()
+    if raw in ("0", "false", "no"):
+        return
+    if kind not in ("start", "end"):
+        return
+
+    def _worker() -> None:
+        try:
+            if sys.platform == "darwin":
+                path = (
+                    "/System/Library/Sounds/Tink.aiff"
+                    if kind == "start"
+                    else "/System/Library/Sounds/Pop.aiff"
+                )
+                if not Path(path).is_file():
+                    return
+                subprocess.run(
+                    ["afplay", path],
+                    check=False,
+                    timeout=3.0,
+                    capture_output=True,
+                )
+            elif sys.platform == "win32":
+                import winsound
+
+                winsound.PlaySound(
+                    "SystemAsterisk" if kind == "start" else "SystemDefault",
+                    winsound.SND_ALIAS | winsound.SND_ASYNC,
+                )
+        except Exception:
+            pass
+
+    threading.Thread(target=_worker, daemon=True).start()
 
 
 def _effective_dictation_llm_cleanup(settings: Settings, *, user_for_log: str) -> bool:
@@ -523,6 +566,7 @@ async def _execute_dictation(
         {"source": source, "user": store.username, "seconds": RECORD_SECONDS},
     )
     publish_event(store.username, "dictation_start", {"source": source})
+    _maybe_dictation_ui_sound("start")
     cancel_event.clear()
     _dictation_stop.clear()
     print("start dictating", flush=True)
@@ -559,6 +603,7 @@ async def _execute_dictation(
                 {"source": source, "user": store.username, "cancelled": cancelled},
             )
             publish_event(store.username, "dictation_cancelled", {"source": source})
+            _maybe_dictation_ui_sound("end")
             return {"ok": False, "cancelled": True, "text": ""}
 
         if stopped:
@@ -572,6 +617,9 @@ async def _execute_dictation(
                 {"source": source, "user": store.username, "seconds": "toggle_stop"},
             )
             publish_event(store.username, "dictation_stop", {"source": source})
+
+        # Mic / PortAudio capture is finished (``InputStream`` closed); chime before STT & typing.
+        _maybe_dictation_ui_sound("end")
 
         capture_audit: dict[str, Any] = {}
         try:
@@ -884,6 +932,7 @@ async def dictation_hotkey_toggle(
         _dictation_server_log("dictation hotkey toggle -> stop active session", {"user": body.username})
         _set_dictation_stop()
         publish_event(store.username, "dictation_stop", {"source": "hotkey_toggle"})
+        # End chime: played when the in-flight _execute_dictation hits dictation_done.
         return {"ok": True, "stopped": True}
     lock_start = time.time()
     async with _dictation_session_lock:
