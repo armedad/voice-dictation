@@ -1,5 +1,8 @@
 """Settings management endpoints."""
+import json
 import os
+import time
+from pathlib import Path
 from typing import Any, Optional
 
 import httpx
@@ -10,6 +13,30 @@ from app.services import users
 from app.services.storage import UserDataStore, DEFAULT_DATA_DIR
 
 router = APIRouter(tags=["settings"])
+
+# #region agent log
+_DEBUG_LOG_PATH = Path("/Users/chee/zapier ai project/.cursor/debug-55f014.log")
+
+
+def _agent_settings_dbg(
+    location: str, message: str, hypothesis_id: str, data: dict[str, Any]
+) -> None:
+    line = {
+        "sessionId": "55f014",
+        "timestamp": int(time.time() * 1000),
+        "location": location,
+        "message": message,
+        "hypothesisId": hypothesis_id,
+        "data": data,
+    }
+    try:
+        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(line, default=str) + "\n")
+    except OSError:
+        pass
+
+
+# #endregion
 
 
 def _sync_hotkey_agent_target_user(store: UserDataStore, patch: dict[str, Any]) -> None:
@@ -65,7 +92,6 @@ class UpdateSettingsRequest(BaseModel):
     dictation_use_default_system_prompt: Optional[bool] = None
     dictation_custom_system_prompt_base: Optional[str] = None
     dictation_cleanup_user_prompt_template: Optional[str] = None
-    dictation_cleanup_user_prompt_template: Optional[str] = None
     dictation_hotkey_toggle: Optional[dict[str, Any]] = None
     dictation_hotkey_cancel: Optional[dict[str, Any]] = None
     dictation_input_device_index: Optional[int] = None
@@ -84,6 +110,24 @@ async def update_settings(request: Request, req: UpdateSettingsRequest):
     """Update settings (partial PATCH: only fields present in the JSON body)."""
     store = get_user_store(request)
     patch = req.model_dump(exclude_unset=True)
+    # #region agent log
+    hot_in_patch = bool(
+        {"dictation_hotkey_toggle", "dictation_hotkey_cancel"} & patch.keys()
+    )
+    if hot_in_patch:
+        _agent_settings_dbg(
+            "settings.py:update_settings:entry",
+            "PATCH received with hotkey field(s)",
+            "H3",
+            {
+                "patch_keys": sorted(patch.keys()),
+                "has_username": bool(store.username),
+                "data_dir_suffix": str(store.data_dir)[-80:]
+                if getattr(store, "data_dir", None)
+                else None,
+            },
+        )
+    # #endregion
 
     if "dictation_input_device_index" in patch:
         v = patch["dictation_input_device_index"]
@@ -116,7 +160,23 @@ async def update_settings(request: Request, req: UpdateSettingsRequest):
         if val is not None:
             try:
                 patch[field] = parse_chord_or_raise(val)
+                # #region agent log
+                _agent_settings_dbg(
+                    "settings.py:update_settings:chord_ok",
+                    f"parsed {field}",
+                    "H3",
+                    {"field": field, "normalized": patch[field]},
+                )
+                # #endregion
             except ValueError as e:
+                # #region agent log
+                _agent_settings_dbg(
+                    "settings.py:update_settings:chord_reject",
+                    "parse_chord_or_raise failed",
+                    "H3",
+                    {"field": field, "error": str(e), "raw_type": type(val).__name__},
+                )
+                # #endregion
                 raise HTTPException(status_code=400, detail=str(e)) from e
             store.ensure_hotkey_secret()
 
@@ -124,6 +184,18 @@ async def update_settings(request: Request, req: UpdateSettingsRequest):
     _sync_hotkey_agent_target_user(store, patch)
     if "dictation_hotkey_toggle" in patch or "dictation_hotkey_cancel" in patch:
         await _notify_hotkey_sidecar_reload(store.username or "")
+    # #region agent log
+    if hot_in_patch:
+        _agent_settings_dbg(
+            "settings.py:update_settings:success",
+            "hotkey patch persisted",
+            "H3",
+            {
+                "toggle": settings.dictation_hotkey_toggle,
+                "cancel": settings.dictation_hotkey_cancel,
+            },
+        )
+    # #endregion
     return settings.model_dump()
 
 
