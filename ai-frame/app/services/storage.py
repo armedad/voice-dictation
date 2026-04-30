@@ -294,6 +294,12 @@ class UserDataStore:
             if key in nullable_settings:
                 setattr(settings, key, value)
                 continue
+            if key == "default_model":
+                if value is None or (isinstance(value, str) and not value.strip()):
+                    settings.default_model = None
+                else:
+                    settings.default_model = value.strip()
+                continue
             if value is None:
                 continue
             if key in ("ollama_url", "lm_studio_url"):

@@ -11,7 +11,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -23,7 +23,7 @@ from app.services.dictation_cleanup import (
     build_cleanup_endpoint,
     resolve_transcription_endpoint,
 )
-from app.services.storage import Settings, UserDataStore
+from app.services.storage import Settings, UserDataStore, USERS_DIR
 from app.services.dictation_events import publish_event
 
 _DEBUG_LOG_PATH = "/Users/chee/zapier ai project/.cursor/debug-55f014.log"
@@ -196,15 +196,16 @@ def _maybe_dictation_ui_sound(kind: str) -> None:
     threading.Thread(target=_worker, daemon=True).start()
 
 
-def _effective_dictation_llm_cleanup(settings: Settings, *, user_for_log: str) -> bool:
+def _dictation_cleanup_gate(settings: Settings, *, user_for_log: str) -> tuple[bool, str]:
     """
-    Honor ``dictation_llm_cleanup_enabled`` only when a default chat model is configured.
+    Decide whether this dictation run should call the cleanup LLM.
 
-    If cleanup is on but ``default_model`` is empty, skip cleanup for this run (transcription
-    only) so hotkey / dictation still works; log so the user can fix Settings.
+    Returns ``(effective, gate_code)`` where ``gate_code`` is always set:
+    ``effective_on`` | ``dictation_llm_cleanup_enabled_false`` |
+    ``default_model_blank_after_strip``.
     """
     if not settings.dictation_llm_cleanup_enabled:
-        return False
+        return False, "dictation_llm_cleanup_enabled_false"
     if not (settings.default_model or "").strip():
         if user_for_log.strip():
             _dictation_server_log(
@@ -212,8 +213,80 @@ def _effective_dictation_llm_cleanup(settings: Settings, *, user_for_log: str) -
                 "running transcription only (pick a model in Settings → Models or disable cleanup).",
                 {"user": user_for_log.strip()},
             )
-        return False
-    return True
+        return False, "default_model_blank_after_strip"
+    return True, "effective_on"
+
+
+def _raw_settings_json_subset(path: Path, keys: tuple[str, ...]) -> dict[str, Any]:
+    """Read JSON object keys as stored on disk (no merge). For trace logs only."""
+    out: dict[str, Any] = {"path": str(path), "exists": path.exists()}
+    if not path.exists():
+        return out
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as e:
+        out["read_error"] = repr(e)[:400]
+        return out
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as e:
+        out["json_error"] = repr(e)[:400]
+        return out
+    if not isinstance(raw, dict):
+        out["json_top_type"] = type(raw).__name__
+        return out
+    out["subset"] = {k: raw[k] if k in raw else "__key_absent__" for k in keys}
+    return out
+
+
+def _dictation_cleanup_gate_trace(
+    store: UserDataStore,
+    source: str,
+    settings: Settings,
+    llm_cleanup: bool,
+    gate_code: str,
+) -> None:
+    """
+    One log line with merged Settings, on-disk user/template JSON, and absolute paths.
+
+    Use this to see why the server skipped cleanup (no guessing vs browser UI).
+    """
+    keys = ("dictation_llm_cleanup_enabled", "default_model", "default_provider")
+    user_disk = _raw_settings_json_subset(store.settings_file, keys)
+    tmpl_path = USERS_DIR / "_default" / "settings.json"
+    tmpl_disk = _raw_settings_json_subset(tmpl_path, keys)
+    dm = settings.default_model
+    payload: dict[str, Any] = {
+        "user": store.username,
+        "source": source,
+        "merged_llm_cleanup_effective": llm_cleanup,
+        "merged_gate_code": gate_code,
+        "merged_dictation_llm_cleanup_enabled": settings.dictation_llm_cleanup_enabled,
+        "merged_dictation_llm_cleanup_enabled_python_type": type(
+            settings.dictation_llm_cleanup_enabled
+        ).__name__,
+        "merged_default_model_repr": repr(dm)[:800],
+        "merged_default_model_outer_len": len(dm or ""),
+        "merged_default_model_strip_len": len((dm or "").strip()),
+        "merged_default_provider": settings.default_provider,
+        "user_settings_json": user_disk,
+        "default_template_settings_json": tmpl_disk,
+    }
+    _dictation_server_log("dictation cleanup gate trace", payload)
+
+
+def _dictation_cleanup_debug_logger(
+    store: UserDataStore, source: str
+) -> Callable[[dict[str, Any]], None]:
+    """Writes one structured line per dictation run to the daily ai-frame log (see client_log)."""
+
+    def _emit(payload: dict[str, Any]) -> None:
+        _dictation_server_log(
+            "dictation cleanup LLM debug",
+            {"user": store.username, "source": source, **payload},
+        )
+
+    return _emit
 
 
 def _store_for_username(username: str) -> UserDataStore:
@@ -229,53 +302,6 @@ class HotkeyUserBody(BaseModel):
 
 class DictationTextBody(BaseModel):
     text: str = Field(..., min_length=1)
-
-
-def _format_verbatim_llm_request(system_prompt_full: str, user_message: str) -> str:
-    """Single readonly bundle: system + user roles as sent to the cleanup LLM."""
-    blocks = [
-        "=== system (full message sent to cleanup LLM) ===\n" + (system_prompt_full or ""),
-        "=== user (raw transcript after speech recognition) ===\n" + (user_message or ""),
-    ]
-    return "\n\n".join(blocks)
-
-
-_NO_CLEANUP_LLM_EMPTY = (
-    "No prompt was sent to the cleanup LLM (no usable transcript after speech recognition)."
-)
-_NO_CLEANUP_LLM_DISABLED = (
-    "No prompt was sent to the cleanup LLM (LLM rewrite before typing is off in Preferences)."
-)
-
-
-def _verbatim_request_for_context_tab(snap: dict[str, Any]) -> str:
-    """
-    Text for the Context tab request panel: real cleanup bundle, or an explicit note when
-    the cleanup LLM was never invoked.
-    """
-    if not isinstance(snap, dict):
-        return ""
-    status = snap.get("status")
-    if status == "empty_transcript":
-        return _NO_CLEANUP_LLM_EMPTY
-
-    llm_cleanup_on = snap.get("llm_cleanup_enabled", True)
-    if llm_cleanup_on is False:
-        raw = (snap.get("user_message") or "").strip()
-        if raw:
-            return (
-                _NO_CLEANUP_LLM_DISABLED
-                + "\n\n=== raw transcript from speech recognition (typed as-is, not sent to any LLM) ===\n"
-                + raw
-            )
-        return _NO_CLEANUP_LLM_DISABLED + "\n\n(No transcribed text for this run.)"
-
-    sys_full = snap.get("system_prompt_full") or ""
-    user_msg = snap.get("user_message") or ""
-    if not str(user_msg).strip() and not str(sys_full).strip():
-        return _NO_CLEANUP_LLM_EMPTY
-
-    return _format_verbatim_llm_request(str(sys_full), str(user_msg))
 
 
 async def _execute_dictation_from_text(
@@ -294,9 +320,10 @@ async def _execute_dictation_from_text(
     from core.orchestrator import run_pipeline
 
     settings = store.get_settings()
-    llm_cleanup = _effective_dictation_llm_cleanup(
+    llm_cleanup, gate_code = _dictation_cleanup_gate(
         settings, user_for_log=store.username or ""
     )
+    _dictation_cleanup_gate_trace(store, source, settings, llm_cleanup, gate_code)
 
     clean_ep = None
     openai_key = None
@@ -328,6 +355,7 @@ async def _execute_dictation_from_text(
             "system_prompt_full": cleanup_system_prompt or "",
             "user_message": "",
             "response_text_full": "(No text provided)",
+            "cleanup_user_prompt": "",
             "llm_cleanup_enabled": llm_cleanup,
             "cleanup_provider": getattr(clean_ep, "provider", None) if clean_ep else None,
             "cleanup_model": getattr(clean_ep, "model_name", None) if clean_ep else None,
@@ -365,6 +393,8 @@ async def _execute_dictation_from_text(
             transcription_initial_prompt=stt_vocab_hint,
             capture_audit=None,
             raw_transcript_override=raw_transcript,
+            cleanup_debug_log=_dictation_cleanup_debug_logger(store, source),
+            cleanup_skip_gate_code=(gate_code if not llm_cleanup else None),
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -453,6 +483,64 @@ async def dictation_audio_input(request: Request) -> dict[str, Any]:
     }
 
 
+def _context_tab_llm_display(snap: dict[str, Any]) -> tuple[str, str, str]:
+    """
+    Build (system_text, user_text, response_text) for the Context tab.
+
+    Snapshots omit ``system_prompt_full`` / ``cleanup_user_prompt`` when no cleanup LLM
+    ran (rewrite off in Profile, or on but no default model so only transcription ran).
+    ``user_message`` in snapshots is the raw STT transcript, not the cleanup user prompt.
+    """
+    response = snap.get("response_text_full") or ""
+    if not isinstance(snap, dict):
+        return "", "", response
+
+    sys_raw = snap.get("system_prompt_full")
+    system = sys_raw if isinstance(sys_raw, str) else ""
+    cup = snap.get("cleanup_user_prompt")
+    user_prompt = cup if isinstance(cup, str) else ("" if cup is None else str(cup))
+
+    raw_msg = snap.get("user_message")
+    raw = raw_msg if isinstance(raw_msg, str) else ""
+
+    llm_off = snap.get("llm_cleanup_enabled") is False
+
+    if llm_off:
+        sys_out = (
+            system.strip()
+            and system
+            or (
+                "(No system message was sent to a cleanup LLM — either “Run dictation through LLM "
+                "before typing” was off in Profile, or it was on but no default chat model was set "
+                "so only transcription ran.)"
+            )
+        )
+        if user_prompt.strip():
+            user_out = user_prompt
+        elif raw.strip():
+            user_out = (
+                "(No user message was sent to a cleanup LLM; raw speech-to-text was typed as-is.)\n\n"
+                + raw.strip()
+            )
+        else:
+            user_out = "(No user message was sent to a cleanup LLM.)"
+        return sys_out, user_out, response
+
+    # Cleanup LLM was used for this saved run.
+    sys_out = system if system.strip() else "(No system prompt text was stored for this history entry.)"
+    if user_prompt.strip():
+        user_out = user_prompt
+    elif raw.strip():
+        user_out = (
+            "(Exact user message to the cleanup LLM was not stored in this history entry. "
+            "Raw transcript from that run:)\n\n"
+            + raw.strip()
+        )
+    else:
+        user_out = "(No user message text was stored for this history entry.)"
+    return sys_out, user_out, response
+
+
 @router.get("/dictation/last-context")
 async def dictation_last_context(
     request: Request,
@@ -474,7 +562,8 @@ async def dictation_last_context(
     if total == 0:
         return {
             "snapshot": {},
-            "verbatim_request": "",
+            "cleanup_system_sent": "",
+            "cleanup_user_sent": "",
             "response_text_full": "",
             "history_index": None,
             "history_total": 0,
@@ -485,11 +574,12 @@ async def dictation_last_context(
     resolved = total - 1 if index is None else index
     resolved = max(0, min(resolved, total - 1))
     snap = entries[resolved]
-    response = snap.get("response_text_full") or ""
     cur_ts = snap.get("timestamp") or None
+    sys_disp, user_disp, response = _context_tab_llm_display(snap)
     return {
         "snapshot": snap,
-        "verbatim_request": _verbatim_request_for_context_tab(snap),
+        "cleanup_system_sent": sys_disp,
+        "cleanup_user_sent": user_disp,
         "response_text_full": response,
         "history_index": resolved,
         "history_total": total,
@@ -521,16 +611,16 @@ async def _execute_dictation(
     from core.models import (
         build_dictation_cleanup_system_prompt,
         format_vocabulary_for_whisper_initial_prompt,
-        format_dictation_cleanup_user_message,
         format_dictation_cleanup_user_message_with_template,
     )
     from core.orchestrator import run_pipeline
 
     settings = store.get_settings()
     sd_device = _resolve_sounddevice_input_index(settings)
-    llm_cleanup = _effective_dictation_llm_cleanup(
+    llm_cleanup, gate_code = _dictation_cleanup_gate(
         settings, user_for_log=store.username or ""
     )
+    _dictation_cleanup_gate_trace(store, source, settings, llm_cleanup, gate_code)
 
     clean_ep = None
     openai_key = None
@@ -641,6 +731,8 @@ async def _execute_dictation(
                 skip_llm_cleanup=not llm_cleanup,
                 transcription_initial_prompt=stt_vocab_hint,
                 capture_audit=capture_audit,
+                cleanup_debug_log=_dictation_cleanup_debug_logger(store, source),
+                cleanup_skip_gate_code=(gate_code if not llm_cleanup else None),
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
@@ -653,11 +745,17 @@ async def _execute_dictation(
         text_out = (text or "").strip()
         if not text_out:
             raw_tr = (capture_audit.get("raw_transcript") or "").strip()
+            cup_empty = ""
+            if llm_cleanup and raw_tr:
+                cup_empty = format_dictation_cleanup_user_message_with_template(
+                    raw_tr, settings.dictation_cleanup_user_prompt_template
+                )
             empty_snapshot = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "system_prompt_full": cleanup_system_prompt or "",
                 "user_message": raw_tr,
                 "response_text_full": "(No speech detected)",
+                "cleanup_user_prompt": cup_empty,
                 "llm_cleanup_enabled": llm_cleanup,
                 "cleanup_provider": getattr(clean_ep, "provider", None) if clean_ep else None,
                 "cleanup_model": getattr(clean_ep, "model_name", None) if clean_ep else None,
