@@ -63,9 +63,10 @@ function _updateContextHistoryChrome(data) {
  */
 export async function refreshDictationLastContext(options = {}) {
     const { resetToLatest = false } = options;
-    const reqEl = document.getElementById('dictation-last-request');
+    const sysEl = document.getElementById('dictation-last-system');
+    const userEl = document.getElementById('dictation-last-user');
     const resEl = document.getElementById('dictation-last-response');
-    if (!reqEl || !resEl) return;
+    if (!sysEl || !userEl || !resEl) return;
     if (resetToLatest) {
         contextHistoryIndex = null;
     }
@@ -73,7 +74,8 @@ export async function refreshDictationLastContext(options = {}) {
         contextHistoryIndex != null ? `dictation/last-context?index=${contextHistoryIndex}` : 'dictation/last-context';
     try {
         const data = await api(q);
-        reqEl.value = data.verbatim_request || '';
+        sysEl.value = data.cleanup_system_sent || '';
+        userEl.value = data.cleanup_user_sent || '';
         resEl.value = data.response_text_full || '';
         if (typeof data.history_index === 'number') {
             contextHistoryIndex = data.history_index;

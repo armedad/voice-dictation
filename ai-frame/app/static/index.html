@@ -170,18 +170,17 @@
                                 <span id="dictation-context-position" class="context-history-position">—</span>
                             </div>
                         </div>
-                        <div class="context-section context-request-section">
-                            <h2 class="context-section-title">Dictation — request sent to cleanup LLM</h2>
-                            <p class="setting-hint">Read-only. Browse prior runs with Back / Forward above.</p>
-                            <textarea id="dictation-last-request" class="dictation-instructions-textarea context-readonly" rows="12" readonly></textarea>
-                        </div>
-                        <div class="context-section">
-                            <div class="context-history-header context-response-header">
-                                <h2 class="context-section-title">Dictation — LLM response (typed into focus)</h2>
-                                <button type="button" id="dictation-last-response-copy" class="btn-secondary">Copy</button>
-                            </div>
+                        <div class="context-section context-llm-messages-section">
+                            <h2 class="context-section-title">Cleanup LLM (exact messages)</h2>
+                            <p class="setting-hint">Read-only. Browse prior runs with Back / Forward above. If no cleanup LLM ran for a row, the first two panels show an explanation (and raw transcript when relevant) instead of blank text.</p>
+                            <h3 class="context-subsection-title">System message sent</h3>
+                            <textarea id="dictation-last-system" class="dictation-instructions-textarea context-readonly" rows="8" readonly></textarea>
+                            <h3 class="context-subsection-title">User message sent</h3>
+                            <textarea id="dictation-last-user" class="dictation-instructions-textarea context-readonly" rows="8" readonly></textarea>
+                            <h3 class="context-subsection-title">Assistant response (typed into focus when applicable)</h3>
                             <div class="context-results-row">
                                 <textarea id="dictation-last-response" class="dictation-instructions-textarea context-readonly context-results-text" rows="8" readonly></textarea>
+                                <button type="button" id="dictation-last-response-copy" class="btn-secondary">Copy response</button>
                             </div>
                         </div>
                     </div>

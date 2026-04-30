@@ -448,17 +448,17 @@ html, body {
     height: 100%;
 }
 
-.context-request-section {
+.context-llm-messages-section {
     flex: 1;
     display: flex;
     flex-direction: column;
     min-height: 0;
 }
 
-.context-request-section .dictation-instructions-textarea {
-    flex: 1;
-    min-height: 0;
-    resize: none;
+.context-llm-messages-section .dictation-instructions-textarea {
+    min-height: 120px;
+    resize: vertical;
+    width: 100%;
 }
 
 .profile-panel {
@@ -543,6 +543,24 @@ html, body {
     font-weight: 600;
     margin-bottom: 8px;
     color: var(--text-primary);
+}
+
+.context-subsection-title {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 12px 0 6px;
+    color: var(--text-secondary);
+}
+
+.context-subsection-title:first-of-type {
+    margin-top: 4px;
+}
+
+.context-llm-messages-section .context-results-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
 }
 
 .context-base-textarea {

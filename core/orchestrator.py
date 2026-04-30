@@ -9,6 +9,14 @@ from .adapters.transcription_openai import transcribe_openai_whisper
 from .config import api_key_for_cleanup, api_key_for_transcription, load_config
 from .models import AdapterEndpoint, VoiceDictationConfig
 
+_CLEANUP_DEBUG_MAX_CHARS = 48_000
+
+
+def _truncate_for_cleanup_debug(text: str) -> tuple[str, bool]:
+    if len(text) <= _CLEANUP_DEBUG_MAX_CHARS:
+        return text, False
+    return text[:_CLEANUP_DEBUG_MAX_CHARS] + "\n...[truncated for log size]", True
+
 
 async def run_pipeline(
     wav_bytes: bytes,
@@ -24,6 +32,8 @@ async def run_pipeline(
     transcription_initial_prompt: Optional[str] = None,
     capture_audit: Optional[dict[str, Any]] = None,
     raw_transcript_override: Optional[str] = None,
+    cleanup_debug_log: Optional[Callable[[dict[str, Any]], None]] = None,
+    cleanup_skip_gate_code: Optional[str] = None,
 ) -> str:
     """
     Transcribe WAV bytes, then optionally run LLM cleanup.
@@ -48,6 +58,12 @@ async def run_pipeline(
 
     ``capture_audit``: if provided, set ``raw_transcript`` after STT (even when skipping LLM).
     ``raw_transcript_override``: optional raw transcript to use instead of STT output.
+
+    ``cleanup_debug_log``: if set, invoked with a dict describing whether the cleanup LLM
+    ran; when it runs, includes truncated ``cleanup_system_message`` / ``cleanup_user_message``.
+
+    ``cleanup_skip_gate_code``: when ai-frame skips cleanup before STT, pass the gate reason
+    (e.g. ``dictation_llm_cleanup_enabled_false``) so skip logs are unambiguous.
 
     When ``cleanup_endpoint`` is omitted, ``~/.voice-dictation/config.json`` cleanup is used.
     """
@@ -77,9 +93,24 @@ async def run_pipeline(
         capture_audit["raw_transcript"] = raw
 
     if not (raw or "").strip():
+        if cleanup_debug_log is not None:
+            cleanup_debug_log(
+                {
+                    "cleanup_llm_called": False,
+                    "cleanup_llm_skip_reason": "empty_raw_transcript",
+                }
+            )
         return ""
 
     if skip_llm_cleanup:
+        if cleanup_debug_log is not None:
+            payload: dict[str, Any] = {
+                "cleanup_llm_called": False,
+                "cleanup_llm_skip_reason": "skip_llm_cleanup",
+            }
+            if cleanup_skip_gate_code:
+                payload["dictation_gate_code"] = cleanup_skip_gate_code
+            cleanup_debug_log(payload)
         return raw
 
     clean = cleanup_endpoint if cleanup_endpoint is not None else cfg.cleanup
@@ -90,6 +121,22 @@ async def run_pipeline(
         user_prompt = cleanup_user_prompt_builder(raw)
     else:
         user_prompt = cleanup_user_prompt or raw
+
+    if cleanup_debug_log is not None:
+        sys_t, sys_trunc = _truncate_for_cleanup_debug(sys_prompt or "")
+        usr_t, usr_trunc = _truncate_for_cleanup_debug(user_prompt or "")
+        cleanup_debug_log(
+            {
+                "cleanup_llm_called": True,
+                "cleanup_provider": clean.provider,
+                "cleanup_model": clean.model_name,
+                "cleanup_base_url": (clean.baseURL or "").strip(),
+                "cleanup_system_message": sys_t,
+                "cleanup_user_message": usr_t,
+                "cleanup_system_truncated": sys_trunc,
+                "cleanup_user_truncated": usr_trunc,
+            }
+        )
 
     if cp in ("ollama_chat", "ollama"):
         cleaned = await cleanup_ollama_chat(user_prompt, clean, system_prompt=sys_prompt)

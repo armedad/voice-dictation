@@ -627,39 +627,68 @@ function applySettings(settings) {
 }
 
 /**
- * Populate a model select element with available models
+ * Saved default chat model as ``provider:modelId``, or ``""`` when none is persisted.
+ * Must match server ``settings.json`` (not the first model in the catalog).
+ */
+function savedDefaultModelComposite() {
+    const s = getCurrentSettings();
+    const m = (s.default_model != null ? String(s.default_model) : '').trim();
+    const p = (s.default_provider != null ? String(s.default_provider) : '').trim() || 'ollama';
+    if (!m) return '';
+    return `${p}:${m}`;
+}
+
+/**
+ * Populate header / settings model selects from ``modelsCache`` and select ``defaultValue``.
+ * When ``defaultValue`` is empty, selects an explicit placeholder (never a fake first model).
  */
 function populateModelSelect(selectElement, defaultValue) {
     if (!selectElement) return;
-    
+
     selectElement.innerHTML = '';
-    
+
     if (modelsCache.groups.length === 0) {
         const option = document.createElement('option');
         option.value = '';
         option.textContent = 'No models available';
         selectElement.appendChild(option);
+        selectElement.value = '';
         return;
     }
-    
+
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'No default model selected';
+    selectElement.appendChild(placeholder);
+
     for (const group of modelsCache.groups) {
         const optgroup = document.createElement('optgroup');
         optgroup.label = group.name;
-        
+
         for (const model of group.models) {
             const option = document.createElement('option');
             option.value = `${group.provider}:${model.id}`;
             option.textContent = model.name;
             optgroup.appendChild(option);
         }
-        
+
         selectElement.appendChild(optgroup);
     }
-    
-    // Set value
-    if (defaultValue) {
+
+    const opts = () => [...selectElement.options];
+    if (defaultValue && opts().some((o) => o.value === defaultValue)) {
         selectElement.value = defaultValue;
+        return;
     }
+    if (defaultValue) {
+        const orphan = document.createElement('option');
+        orphan.value = defaultValue;
+        orphan.textContent = `Unavailable (not in list): ${defaultValue}`;
+        selectElement.insertBefore(orphan, placeholder.nextSibling);
+        selectElement.value = defaultValue;
+        return;
+    }
+    selectElement.value = '';
 }
 
 /**
@@ -669,14 +698,12 @@ export async function loadModels() {
     try {
         modelsCache = await api('/api/models');
         debugLog('MODELS', 'Loaded models:', modelsCache.groups.length, 'groups');
-        
-        const defaultValue = modelsCache.default.model && modelsCache.default.provider
-            ? `${modelsCache.default.provider}:${modelsCache.default.model}`
-            : '';
-        
+
+        const defaultValue = savedDefaultModelComposite();
+
         // Header model select
         populateModelSelect(document.getElementById('model-select'), defaultValue);
-        
+
         // Settings default model select
         populateModelSelect(document.getElementById('default-model-select'), defaultValue);
 
@@ -1150,17 +1177,19 @@ export function initSettings() {
     if (defaultModelSelect) {
         defaultModelSelect.addEventListener('change', async () => {
             const value = defaultModelSelect.value;
-            if (value) {
-                const [provider, ...modelParts] = value.split(':');
-                const model = modelParts.join(':');
-                await saveSettings({ 
-                    default_provider: provider, 
-                    default_model: model 
-                });
-                // Sync header selector
-                const headerSelect = document.getElementById('model-select');
-                if (headerSelect) headerSelect.value = value;
+            if (!value) {
+                await saveSettings({ default_model: null });
+                await loadModels();
+                return;
             }
+            const [provider, ...modelParts] = value.split(':');
+            const model = modelParts.join(':');
+            await saveSettings({
+                default_provider: provider,
+                default_model: model,
+            });
+            const headerSelect = document.getElementById('model-select');
+            if (headerSelect) headerSelect.value = value;
         });
     }
     
@@ -1169,17 +1198,19 @@ export function initSettings() {
     if (headerModelSelect) {
         headerModelSelect.addEventListener('change', async () => {
             const value = headerModelSelect.value;
-            if (value) {
-                const [provider, ...modelParts] = value.split(':');
-                const model = modelParts.join(':');
-                await saveSettings({ 
-                    default_provider: provider, 
-                    default_model: model 
-                });
-                // Sync settings selector
-                const settingsSelect = document.getElementById('default-model-select');
-                if (settingsSelect) settingsSelect.value = value;
+            if (!value) {
+                await saveSettings({ default_model: null });
+                await loadModels();
+                return;
             }
+            const [provider, ...modelParts] = value.split(':');
+            const model = modelParts.join(':');
+            await saveSettings({
+                default_provider: provider,
+                default_model: model,
+            });
+            const settingsSelect = document.getElementById('default-model-select');
+            if (settingsSelect) settingsSelect.value = value;
         });
     }
 
