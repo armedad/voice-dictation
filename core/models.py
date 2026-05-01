@@ -54,6 +54,15 @@ DICTATION_CLEANUP_USER_TEMPLATE = (
     "Return only the rewritten text."
 )
 
+# Full cleanup system message layout. Use .replace only (not str.format) so prose braces stay safe.
+DEFAULT_CLEANUP_SYSTEM_PROMPT_TEMPLATE = (
+    DEFAULT_CLEANUP_SYSTEM_PROMPT.strip()
+    + "\n\n{{ vocabulary }}\n\n"
+    + "User preferences (follow these when rewriting):\n"
+    + "{{ user preferences }}\n\n"
+    + DICTATION_CLEANUP_GUARDRAILS
+)
+
 
 MAX_VOCABULARY_LINES = 150
 
@@ -88,41 +97,38 @@ def format_vocabulary_for_whisper_initial_prompt(raw: Optional[str]) -> Optional
     return f"Terms that may appear: {joined}."
 
 
-def build_dictation_cleanup_system_prompt(
-    user_instructions: Optional[str],
-    vocabulary: Optional[str] = None,
+def _cleanup_vocabulary_subsection(vocabulary: Optional[str]) -> str:
+    """Vocabulary block for ``{{ vocabulary }}`` substitution, or the literal ``none``."""
+    voc_lines = parse_vocabulary_lines(vocabulary)
+    if not voc_lines:
+        return "none"
+    bullets = "\n".join(f"- {line}" for line in voc_lines)
+    return (
+        bullets
+    )
+
+
+def render_dictation_cleanup_system_prompt(
+    template: Optional[str],
     *,
-    use_default_base: bool = True,
-    custom_base: Optional[str] = None,
+    vocabulary: Optional[str],
+    user_instructions: Optional[str],
 ) -> str:
     """
-    Merge base system text with optional vocabulary list and user style constraints.
+    Substitute ``{{ vocabulary }}`` and ``{{ user preferences }}`` into the stored template.
 
-    When ``use_default_base`` is True, the base segment is ``DEFAULT_CLEANUP_SYSTEM_PROMPT``.
-    When False, ``custom_base`` replaces only that segment (after strip); empty custom falls
-    back to the built-in default. Vocabulary and user instructions are always appended when
-    non-empty.
+    Empty template (after strip) uses ``DEFAULT_CLEANUP_SYSTEM_PROMPT_TEMPLATE``. Empty
+    vocabulary becomes ``none``; empty user instructions becomes ``none``. Non-empty user
+    text is the trimmed body only (section title lives in the template).
     """
-    if use_default_base:
-        base = DEFAULT_CLEANUP_SYSTEM_PROMPT.strip()
-    else:
-        custom = (custom_base or "").strip()
-        base = custom if custom else DEFAULT_CLEANUP_SYSTEM_PROMPT.strip()
-    parts: list[str] = [base]
-    voc_lines = parse_vocabulary_lines(vocabulary)
-    if voc_lines:
-        bullets = "\n".join(f"- {line}" for line in voc_lines)
-        parts.append(
-            "Preferred vocabulary (when the transcript clearly refers to these, use this "
-            "spelling or form exactly; do not add names or terms that are not supported by "
-            "what was said):\n"
-            + bullets
-        )
-    extra = (user_instructions or "").strip()
-    if extra:
-        parts.append(f"User preferences (follow these when rewriting):\n{extra}")
-    parts.append(DICTATION_CLEANUP_GUARDRAILS)
-    return "\n\n".join(parts)
+    t = (template or "").strip()
+    if not t:
+        t = DEFAULT_CLEANUP_SYSTEM_PROMPT_TEMPLATE.strip()
+    voc_sub = _cleanup_vocabulary_subsection(vocabulary)
+    prefs = (user_instructions or "").strip()
+    user_sub = prefs if prefs else "none"
+    out = t.replace("{{ vocabulary }}", voc_sub).replace("{{ user preferences }}", user_sub)
+    return out.strip()
 
 
 def format_dictation_cleanup_user_message(raw_transcript: str) -> str:

@@ -146,14 +146,13 @@
                 <div class="context-grid">
                     <div class="context-column">
                         <div class="context-section context-base-section">
-                            <h2 class="context-section-title">Dictation cleanup — base system prompt</h2>
-                            <p class="setting-hint">Replaces only the <strong>base</strong> segment. Vocabulary and Dictation instructions are always merged after this (see Settings).</p>
-                            <label class="setting-checkbox-label">
-                                <input type="checkbox" id="dictation-use-default-prompt" checked>
-                                <span>Use built-in default base prompt</span>
-                            </label>
-                            <textarea id="dictation-context-base-prompt" class="dictation-instructions-textarea context-base-textarea" rows="8" placeholder="Custom base prompt when default is off"></textarea>
-                            <p id="dictation-context-base-saved" class="dictation-instructions-saved" hidden>Saved.</p>
+                            <h2 class="context-section-title">Dictation cleanup — system prompt template</h2>
+                            <p class="setting-hint">Full system message sent to the cleanup LLM. Use placeholders <code>{{ vocabulary }}</code> (preferred terms block or <code>none</code>) and <code>{{ user preferences }}</code> (Dictation instructions body or <code>none</code>). Edit in Profile if you only change vocabulary or instructions there.</p>
+                            <div class="context-template-toolbar">
+                                <button type="button" id="dictation-context-system-template-restore" class="btn-secondary">Restore default template</button>
+                            </div>
+                            <textarea id="dictation-context-system-prompt-template" class="dictation-instructions-textarea context-base-textarea" rows="14" placeholder="System prompt template with {{ vocabulary }} and {{ user preferences }}"></textarea>
+                            <p id="dictation-context-system-template-saved" class="dictation-instructions-saved" hidden>Saved.</p>
                         </div>
                     </div>
                     <div class="context-column">

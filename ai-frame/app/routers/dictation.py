@@ -313,9 +313,9 @@ async def _execute_dictation_from_text(
     """Run cleanup-only pipeline from a provided transcript (no mic)."""
     from core.config import load_config
     from core.models import (
-        build_dictation_cleanup_system_prompt,
-        format_vocabulary_for_whisper_initial_prompt,
         format_dictation_cleanup_user_message_with_template,
+        format_vocabulary_for_whisper_initial_prompt,
+        render_dictation_cleanup_system_prompt,
     )
     from core.orchestrator import run_pipeline
 
@@ -338,11 +338,10 @@ async def _execute_dictation_from_text(
 
     cleanup_system_prompt = None
     if llm_cleanup:
-        cleanup_system_prompt = build_dictation_cleanup_system_prompt(
-            settings.dictation_instructions,
+        cleanup_system_prompt = render_dictation_cleanup_system_prompt(
+            settings.dictation_cleanup_system_prompt_template,
             vocabulary=settings.dictation_vocabulary,
-            use_default_base=settings.dictation_use_default_system_prompt,
-            custom_base=settings.dictation_custom_system_prompt_base,
+            user_instructions=settings.dictation_instructions,
         )
 
     stt_vocab_hint = format_vocabulary_for_whisper_initial_prompt(
@@ -429,12 +428,20 @@ async def _execute_dictation_from_text(
 
 @router.get("/dictation/prompt-defaults")
 async def dictation_prompt_defaults(request: Request) -> dict[str, str]:
-    """Built-in dictation cleanup base prompt (for Context tab when using default)."""
+    """Built-in dictation cleanup prompts (Context tab restore / defaults)."""
     if not request.cookies.get("aiframe_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
-    from core.models import DEFAULT_CLEANUP_SYSTEM_PROMPT
+    from core.models import (
+        DEFAULT_CLEANUP_SYSTEM_PROMPT,
+        DEFAULT_CLEANUP_SYSTEM_PROMPT_TEMPLATE,
+    )
 
-    return {"default_cleanup_base_prompt": DEFAULT_CLEANUP_SYSTEM_PROMPT.strip()}
+    return {
+        "default_cleanup_base_prompt": DEFAULT_CLEANUP_SYSTEM_PROMPT.strip(),
+        "default_cleanup_system_prompt_template": (
+            DEFAULT_CLEANUP_SYSTEM_PROMPT_TEMPLATE.strip()
+        ),
+    }
 
 
 def _resolve_sounddevice_input_index(settings: Settings) -> int | None:
@@ -609,9 +616,9 @@ async def _execute_dictation(
 
     from core.config import load_config
     from core.models import (
-        build_dictation_cleanup_system_prompt,
-        format_vocabulary_for_whisper_initial_prompt,
         format_dictation_cleanup_user_message_with_template,
+        format_vocabulary_for_whisper_initial_prompt,
+        render_dictation_cleanup_system_prompt,
     )
     from core.orchestrator import run_pipeline
 
@@ -635,11 +642,10 @@ async def _execute_dictation(
 
     cleanup_system_prompt = None
     if llm_cleanup:
-        cleanup_system_prompt = build_dictation_cleanup_system_prompt(
-            settings.dictation_instructions,
+        cleanup_system_prompt = render_dictation_cleanup_system_prompt(
+            settings.dictation_cleanup_system_prompt_template,
             vocabulary=settings.dictation_vocabulary,
-            use_default_base=settings.dictation_use_default_system_prompt,
-            custom_base=settings.dictation_custom_system_prompt_base,
+            user_instructions=settings.dictation_instructions,
         )
 
     stt_vocab_hint = format_vocabulary_for_whisper_initial_prompt(

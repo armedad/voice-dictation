@@ -1,12 +1,12 @@
 /**
- * Main-window Context tab: dictation system base prompt + last LLM request/response.
+ * Main-window Context tab: dictation cleanup system prompt template + last LLM request/response.
  */
 
 import { api } from './api.js';
 import { saveSettings, getCurrentSettings } from './settings.js';
 import { debugLog, debugError } from './debug-flags.js';
 
-let contextBaseDebounce = null;
+let contextSystemTemplateDebounce = null;
 /** Resolved server index for the row shown in the Context tab (0 = oldest). */
 let contextHistoryIndex = null;
 /** Total dictation snapshots (from last API response). */
@@ -90,9 +90,8 @@ export async function refreshDictationLastContext(options = {}) {
 }
 
 export async function syncContextTabFromSettings(forceRefresh = false) {
-    const cb = document.getElementById('dictation-use-default-prompt');
-    const ta = document.getElementById('dictation-context-base-prompt');
-    if (!cb || !ta) return;
+    const ta = document.getElementById('dictation-context-system-prompt-template');
+    if (!ta) return;
 
     let s = getCurrentSettings();
     if (forceRefresh || !Object.keys(s).length) {
@@ -102,49 +101,36 @@ export async function syncContextTabFromSettings(forceRefresh = false) {
             debugError('CONTEXT', 'Failed to refresh settings:', e);
         }
     }
-    const useDefault = s.dictation_use_default_system_prompt !== false;
-    cb.checked = useDefault;
 
-    try {
-        if (useDefault) {
+    let tmpl =
+        s.dictation_cleanup_system_prompt_template != null
+            ? s.dictation_cleanup_system_prompt_template
+            : '';
+
+    if (!String(tmpl).trim()) {
+        try {
             const d = await api('dictation/prompt-defaults');
-            ta.value = d.default_cleanup_base_prompt || '';
-            ta.readOnly = true;
-        } else {
-            ta.readOnly = false;
-            ta.value =
-                s.dictation_custom_system_prompt_base != null
-                    ? s.dictation_custom_system_prompt_base
-                    : '';
+            tmpl = d.default_cleanup_system_prompt_template || '';
+        } catch (e) {
+            debugError('CONTEXT', 'Failed to load prompt defaults:', e);
         }
-
-    } catch (e) {
-        debugError('CONTEXT', 'Failed to sync prompt defaults:', e);
     }
+
+    ta.value = tmpl;
+    ta.readOnly = false;
 }
 
-async function onToggleUseDefault() {
-    const cb = document.getElementById('dictation-use-default-prompt');
-    if (!cb) return;
-    try {
-        await saveSettings({ dictation_use_default_system_prompt: cb.checked });
-        await syncContextTabFromSettings(true);
-    } catch (e) {
-        debugError('CONTEXT', 'Toggle save failed:', e);
-    }
-}
-
-function scheduleSaveCustomBase() {
-    if (contextBaseDebounce) clearTimeout(contextBaseDebounce);
-    contextBaseDebounce = setTimeout(async () => {
-        contextBaseDebounce = null;
-        const ta = document.getElementById('dictation-context-base-prompt');
-        if (!ta || ta.readOnly) return;
+function scheduleSaveSystemTemplate() {
+    if (contextSystemTemplateDebounce) clearTimeout(contextSystemTemplateDebounce);
+    contextSystemTemplateDebounce = setTimeout(async () => {
+        contextSystemTemplateDebounce = null;
+        const ta = document.getElementById('dictation-context-system-prompt-template');
+        if (!ta) return;
         try {
             await saveSettings({
-                dictation_custom_system_prompt_base: ta.value,
+                dictation_cleanup_system_prompt_template: ta.value,
             });
-            const hint = document.getElementById('dictation-context-base-saved');
+            const hint = document.getElementById('dictation-context-system-template-saved');
             if (hint) {
                 hint.hidden = false;
                 setTimeout(() => {
@@ -152,9 +138,29 @@ function scheduleSaveCustomBase() {
                 }, 1200);
             }
         } catch (e) {
-            debugError('CONTEXT', 'Custom base save failed:', e);
+            debugError('CONTEXT', 'System template save failed:', e);
         }
     }, 600);
+}
+
+async function onRestoreDefaultSystemTemplate() {
+    const ta = document.getElementById('dictation-context-system-prompt-template');
+    if (!ta) return;
+    try {
+        const d = await api('dictation/prompt-defaults');
+        const def = d.default_cleanup_system_prompt_template || '';
+        ta.value = def;
+        await saveSettings({ dictation_cleanup_system_prompt_template: def });
+        const hint = document.getElementById('dictation-context-system-template-saved');
+        if (hint) {
+            hint.hidden = false;
+            setTimeout(() => {
+                hint.hidden = true;
+            }, 1200);
+        }
+    } catch (e) {
+        debugError('CONTEXT', 'Restore default template failed:', e);
+    }
 }
 
 export function initContextTab() {
@@ -207,12 +213,12 @@ export function initContextTab() {
         showContext().catch((e) => debugError('CONTEXT', e));
     });
 
-    document.getElementById('dictation-use-default-prompt')?.addEventListener('change', () => {
-        onToggleUseDefault().catch((e) => debugError('CONTEXT', e));
+    document.getElementById('dictation-context-system-prompt-template')?.addEventListener('input', () => {
+        scheduleSaveSystemTemplate();
     });
 
-    document.getElementById('dictation-context-base-prompt')?.addEventListener('input', () => {
-        scheduleSaveCustomBase();
+    document.getElementById('dictation-context-system-template-restore')?.addEventListener('click', () => {
+        onRestoreDefaultSystemTemplate().catch((e) => debugError('CONTEXT', e));
     });
 
     document.getElementById('dictation-last-response-copy')?.addEventListener('click', async () => {

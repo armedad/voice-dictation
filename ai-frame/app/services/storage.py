@@ -43,6 +43,7 @@ class Settings(BaseModel):
     dictation_vocabulary: Optional[str] = None
     dictation_use_default_system_prompt: bool = True
     dictation_custom_system_prompt_base: Optional[str] = None
+    dictation_cleanup_system_prompt_template: Optional[str] = None
     dictation_cleanup_user_prompt_template: Optional[str] = None
     # Global dictation hotkeys (JSON chord or null); see core.hotkey_chord
     dictation_hotkey_toggle: Optional[dict[str, Any]] = None
@@ -57,6 +58,12 @@ DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE = (
     "User said (verbatim transcript, may contain errors):\n<<<\n{raw}\n>>>\n\n"
     "Return only the rewritten text. Do not answer the question."
 )
+
+
+def _default_dictation_cleanup_system_prompt_template() -> str:
+    from core.models import DEFAULT_CLEANUP_SYSTEM_PROMPT_TEMPLATE
+
+    return DEFAULT_CLEANUP_SYSTEM_PROMPT_TEMPLATE.strip()
 
 
 def normalize_url(url: str) -> str:
@@ -78,11 +85,16 @@ def get_default_settings() -> Settings:
                 defaults.dictation_cleanup_user_prompt_template = (
                     DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE
                 )
+            if defaults.dictation_cleanup_system_prompt_template is None:
+                defaults.dictation_cleanup_system_prompt_template = (
+                    _default_dictation_cleanup_system_prompt_template()
+                )
             return defaults
         except (json.JSONDecodeError, Exception):
             pass
     return Settings(
-        dictation_cleanup_user_prompt_template=DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE
+        dictation_cleanup_system_prompt_template=_default_dictation_cleanup_system_prompt_template(),
+        dictation_cleanup_user_prompt_template=DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE,
     )
 
 
@@ -258,7 +270,11 @@ class UserDataStore:
             settings.dictation_cleanup_user_prompt_template = (
                 DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE
             )
-        
+        if settings.dictation_cleanup_system_prompt_template is None:
+            settings.dictation_cleanup_system_prompt_template = (
+                _default_dictation_cleanup_system_prompt_template()
+            )
+
         # Normalize URLs
         settings.ollama_url = normalize_url(settings.ollama_url)
         settings.lm_studio_url = normalize_url(settings.lm_studio_url)
