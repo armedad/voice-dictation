@@ -463,7 +463,7 @@ html, body {
 
 .profile-panel {
     overflow-y: auto;
-    padding: 20px 24px 24px;
+    padding: 20px 24px 56px;
     align-items: stretch;
     height: 100%;
     flex: 1;
@@ -497,6 +497,11 @@ html, body {
     display: flex;
     flex-direction: column;
     min-height: 0;
+}
+
+.profile-panel .profile-dictation-template,
+.profile-panel .profile-vocabulary {
+    padding-bottom: 24px;
 }
 
 .profile-panel .profile-dictation-instructions .dictation-instructions-textarea,
@@ -1044,6 +1049,17 @@ html, body {
     margin-top: 8px;
     font-size: 12px;
     color: var(--success);
+}
+
+/* Profile: keep one line reserved so "Saved." toggling does not shift textareas */
+.profile-panel .dictation-instructions-saved {
+    min-height: 1.35em;
+    line-height: 1.35;
+}
+
+.profile-panel .dictation-instructions-saved[hidden] {
+    display: block !important;
+    visibility: hidden;
 }
 
 /* Full width model select in settings */
