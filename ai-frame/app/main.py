@@ -6,7 +6,6 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 from datetime import datetime
 import sys
-import json
 import time
 
 # Voice dictation MVP package root (parent of ai-frame): core/, platform_mac/, etc.
@@ -16,6 +15,7 @@ if str(VOICE_DICTATION_ROOT) not in sys.path:
     sys.path.insert(0, str(VOICE_DICTATION_ROOT))
 
 from app.routers import auth, chat, models, settings, client_log, notifications, providers, dictation, dictation_events
+from core.debug_flags_logging import log_system
 
 # Directories
 PROJECT_DIR = Path(__file__).parent.parent
@@ -51,27 +51,8 @@ app = FastAPI(
     version="0.1.0"
 )
 
-_DEBUG_LOG_PATH = "/Users/chee/zapier ai project/.cursor/debug-55f014.log"
-_DEBUG_SESSION_ID = "55f014"
-
-
 def _debug_emit(location: str, message: str, data: dict) -> None:
-    # region agent log
-    payload = {
-        "sessionId": _DEBUG_SESSION_ID,
-        "runId": "dictation-latency",
-        "hypothesisId": "H_SERVER",
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    try:
-        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=True) + "\n")
-    except OSError:
-        pass
-    # endregion
+    log_system(level="INFO", message=message, data={"location": location, **data})
 
 
 @app.middleware("http")

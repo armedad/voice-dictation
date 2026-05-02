@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 import secrets
-from typing import Any, Optional
+from typing import Any, Optional, Mapping
 from uuid import uuid4
 from pydantic import BaseModel, Field
 
@@ -50,6 +50,33 @@ class Settings(BaseModel):
     dictation_hotkey_cancel: Optional[dict[str, Any]] = None
     # None = follow OS / PortAudio default input; int = explicit PortAudio input device index
     dictation_input_device_index: Optional[int] = None
+    debug_flags: dict[str, bool] = Field(default_factory=dict)
+
+
+DEBUG_FLAG_DEFAULTS: dict[str, bool] = {
+    "AUTH": True,
+    "API": False,
+    "CHAT": True,
+    "SETTINGS": False,
+    "MODELS": False,
+    "NOTIFICATIONS": True,
+    "APP": False,
+    "DICTATION": False,
+    "CONTEXT": False,
+    "PROFILE": False,
+    "SPEECH": False,
+}
+
+
+def normalize_debug_flags(raw: Mapping[str, Any] | None) -> dict[str, bool]:
+    """Return full debug-flag map (unknown keys dropped, missing keys defaulted)."""
+    out = dict(DEBUG_FLAG_DEFAULTS)
+    if not isinstance(raw, Mapping):
+        return out
+    for key in DEBUG_FLAG_DEFAULTS:
+        if key in raw:
+            out[key] = bool(raw[key])
+    return out
 
 
 DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE = (
@@ -81,6 +108,7 @@ def get_default_settings() -> Settings:
             with open(default_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             defaults = Settings(**data)
+            defaults.debug_flags = normalize_debug_flags(defaults.debug_flags)
             if defaults.dictation_cleanup_user_prompt_template is None:
                 defaults.dictation_cleanup_user_prompt_template = (
                     DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE
@@ -95,6 +123,7 @@ def get_default_settings() -> Settings:
     return Settings(
         dictation_cleanup_system_prompt_template=_default_dictation_cleanup_system_prompt_template(),
         dictation_cleanup_user_prompt_template=DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE,
+        debug_flags=dict(DEBUG_FLAG_DEFAULTS),
     )
 
 
@@ -266,6 +295,7 @@ class UserDataStore:
                 merged_data[key] = value
         
         settings = Settings(**merged_data)
+        settings.debug_flags = normalize_debug_flags(settings.debug_flags)
         if settings.dictation_cleanup_user_prompt_template is None:
             settings.dictation_cleanup_user_prompt_template = (
                 DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE

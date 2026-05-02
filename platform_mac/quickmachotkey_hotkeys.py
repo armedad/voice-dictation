@@ -7,9 +7,7 @@ Mirrors the approach in @coding/hotkey/:
 """
 from __future__ import annotations
 
-import json
 import threading
-import time
 from typing import Any, Callable
 
 from AppKit import NSApplication  # type: ignore[import]
@@ -18,29 +16,17 @@ from quickmachotkey import mask, quickHotKey  # type: ignore[import]
 from quickmachotkey.constants import cmdKey, controlKey, optionKey, shiftKey  # type: ignore[import]
 
 from core.hotkey_chord import parse_chord_or_raise
+from core.debug_flags_logging import log_debug
 from platform_mac.carbon_hotkeys import chord_to_carbon_vk_and_modifiers
 
-_DEBUG_LOG_PATH = "/Users/chee/zapier ai project/.cursor/debug-55f014.log"
-_DEBUG_SESSION_ID = "55f014"
-
-
 def _debug_emit(location: str, message: str, data: dict[str, Any]) -> None:
-    # region agent log
-    payload = {
-        "sessionId": _DEBUG_SESSION_ID,
-        "runId": f"quickmachotkey-{int(time.time())}",
-        "hypothesisId": "H6",
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    try:
-        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=True) + "\n")
-    except OSError:
-        pass
-    # endregion
+    log_debug(
+        username=None,
+        flag="DICTATION",
+        level="INFO",
+        message=message,
+        data={"location": location, **data},
+    )
 
 
 class QuickMachHotkeyController:

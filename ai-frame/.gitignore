@@ -13,6 +13,11 @@ build/
 
 # User data (per-user state)
 users/
+!users/
+users/*
+!users/_default/
+users/_default/*
+!users/_default/settings.json
 
 # Logs
 logs/

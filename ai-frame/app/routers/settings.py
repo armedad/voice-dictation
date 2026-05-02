@@ -1,8 +1,5 @@
 """Settings management endpoints."""
-import json
 import os
-import time
-from pathlib import Path
 from typing import Any, Optional
 
 import httpx
@@ -10,33 +7,26 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.services import users
-from app.services.storage import UserDataStore, DEFAULT_DATA_DIR
+from app.services.storage import UserDataStore, DEFAULT_DATA_DIR, normalize_debug_flags
+from core.debug_flags_logging import log_debug
 
 router = APIRouter(tags=["settings"])
 
-# #region agent log
-_DEBUG_LOG_PATH = Path("/Users/chee/zapier ai project/.cursor/debug-55f014.log")
-
-
 def _agent_settings_dbg(
-    location: str, message: str, hypothesis_id: str, data: dict[str, Any]
+    location: str,
+    message: str,
+    hypothesis_id: str,
+    data: dict[str, Any],
+    *,
+    username: str | None = None,
 ) -> None:
-    line = {
-        "sessionId": "55f014",
-        "timestamp": int(time.time() * 1000),
-        "location": location,
-        "message": message,
-        "hypothesisId": hypothesis_id,
-        "data": data,
-    }
-    try:
-        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(line, default=str) + "\n")
-    except OSError:
-        pass
-
-
-# #endregion
+    log_debug(
+        username=username,
+        flag="SETTINGS",
+        level="INFO",
+        message=message,
+        data={"location": location, "hypothesis_id": hypothesis_id, **data},
+    )
 
 
 def _sync_hotkey_agent_target_user(store: UserDataStore, patch: dict[str, Any]) -> None:
@@ -96,6 +86,7 @@ class UpdateSettingsRequest(BaseModel):
     dictation_hotkey_toggle: Optional[dict[str, Any]] = None
     dictation_hotkey_cancel: Optional[dict[str, Any]] = None
     dictation_input_device_index: Optional[int] = None
+    debug_flags: Optional[dict[str, bool]] = None
 
 
 @router.get("/settings")
@@ -111,6 +102,8 @@ async def update_settings(request: Request, req: UpdateSettingsRequest):
     """Update settings (partial PATCH: only fields present in the JSON body)."""
     store = get_user_store(request)
     patch = req.model_dump(exclude_unset=True)
+    if "debug_flags" in patch:
+        patch["debug_flags"] = normalize_debug_flags(patch.get("debug_flags"))
     # #region agent log
     hot_in_patch = bool(
         {"dictation_hotkey_toggle", "dictation_hotkey_cancel"} & patch.keys()
@@ -127,6 +120,7 @@ async def update_settings(request: Request, req: UpdateSettingsRequest):
                 if getattr(store, "data_dir", None)
                 else None,
             },
+            username=store.username,
         )
     # #endregion
 
@@ -167,6 +161,7 @@ async def update_settings(request: Request, req: UpdateSettingsRequest):
                     f"parsed {field}",
                     "H3",
                     {"field": field, "normalized": patch[field]},
+                    username=store.username,
                 )
                 # #endregion
             except ValueError as e:
@@ -176,6 +171,7 @@ async def update_settings(request: Request, req: UpdateSettingsRequest):
                     "parse_chord_or_raise failed",
                     "H3",
                     {"field": field, "error": str(e), "raw_type": type(val).__name__},
+                    username=store.username,
                 )
                 # #endregion
                 raise HTTPException(status_code=400, detail=str(e)) from e
@@ -195,6 +191,7 @@ async def update_settings(request: Request, req: UpdateSettingsRequest):
                 "toggle": settings.dictation_hotkey_toggle,
                 "cancel": settings.dictation_hotkey_cancel,
             },
+            username=store.username,
         )
     # #endregion
     return settings.model_dump()

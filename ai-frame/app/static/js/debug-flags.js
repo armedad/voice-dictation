@@ -1,15 +1,10 @@
 /**
  * Debug Flags - Feature-based logging control
- * 
- * Flags can be toggled in Settings > Debug > Debug Flags.
- * Settings are saved to localStorage.
- * 
- * Usage:
- *   import { DEBUG, debugLog, debugWarn, debugError } from './debug-flags.js';
- *   debugLog('AUTH', 'User logged in:', username);
+ *
+ * Primary source of truth is server settings.debug_flags.
+ * localStorage is fallback during early bootstrap/offline.
  */
 
-// Flag definitions with defaults and descriptions
 const FLAG_DEFINITIONS = {
     AUTH: { default: true, desc: 'Login & sessions' },
     API: { default: false, desc: 'API requests' },
@@ -19,100 +14,98 @@ const FLAG_DEFINITIONS = {
     NOTIFICATIONS: { default: true, desc: 'Notifications' },
     APP: { default: false, desc: 'General app' },
     DICTATION: { default: false, desc: 'Dictate button & hotkey UI traces' },
+    CONTEXT: { default: false, desc: 'Context tab' },
+    PROFILE: { default: false, desc: 'Profile tab' },
+    SPEECH: { default: false, desc: 'Speech model discovery' },
 };
 
 const STORAGE_KEY = 'aiframe_debug_flags';
+const FLUSH_DELAY_MS = 100;
+const SERVER_ENDPOINT = '/api/log';
 
-// Load flags from localStorage (or use defaults)
-function loadFlags() {
-    const flags = {};
-    
-    // Start with defaults
-    for (const [key, def] of Object.entries(FLAG_DEFINITIONS)) {
-        flags[key] = def.default;
-    }
-    
-    // Override with saved values
-    try {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-            const parsed = JSON.parse(saved);
-            for (const [key, value] of Object.entries(parsed)) {
-                if (key in flags) {
-                    flags[key] = !!value;
-                }
-            }
-        }
-    } catch (e) {
-        console.warn('[DEBUG] Failed to load debug flags from localStorage:', e);
-    }
-    
-    // Non-configurable flags
-    flags.SEND_TO_SERVER = true;
-    flags.SERVER_ENDPOINT = '/api/log';
-    
-    return flags;
+const _DEBUG_FLAGS = {
+    SEND_TO_SERVER: true,
+    SERVER_ENDPOINT,
+};
+
+for (const [key, def] of Object.entries(FLAG_DEFINITIONS)) {
+    _DEBUG_FLAGS[key] = !!def.default;
 }
 
-export const DEBUG = loadFlags();
-
-// Save flags to localStorage
-function saveFlags() {
-    try {
-        const toSave = {};
-        for (const key of Object.keys(FLAG_DEFINITIONS)) {
-            toSave[key] = DEBUG[key];
-        }
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
-    } catch (e) {
-        console.warn('[DEBUG] Failed to save debug flags:', e);
-    }
-}
-
-/**
- * Set a debug flag and save to localStorage
- */
-export function setDebugFlag(flag, enabled) {
-    if (flag in FLAG_DEFINITIONS) {
-        DEBUG[flag] = !!enabled;
-        saveFlags();
-    }
-}
-
-/**
- * Set all debug flags at once
- */
-export function setAllDebugFlags(enabled) {
-    for (const key of Object.keys(FLAG_DEFINITIONS)) {
-        DEBUG[key] = !!enabled;
-    }
-    saveFlags();
-}
-
-/**
- * Get flag definitions for UI rendering
- */
-export function getDebugFlagDefinitions() {
-    return FLAG_DEFINITIONS;
-}
-
-// Log buffer for batching server sends
 let logBuffer = [];
 let flushTimeout = null;
-const FLUSH_DELAY_MS = 100;
+let saveFlagsTimeout = null;
+let flagsReady = false;
+let suppressSettingsSync = false;
+
+function _flagsPayload() {
+    const out = {};
+    for (const key of Object.keys(FLAG_DEFINITIONS)) {
+        out[key] = !!_DEBUG_FLAGS[key];
+    }
+    return out;
+}
+
+function _applyFlags(raw) {
+    const next = raw && typeof raw === 'object' ? raw : {};
+    for (const [key, def] of Object.entries(FLAG_DEFINITIONS)) {
+        _DEBUG_FLAGS[key] = Object.prototype.hasOwnProperty.call(next, key) ? !!next[key] : !!def.default;
+    }
+}
+
+function _saveFlagsToLocalStorage() {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(_flagsPayload()));
+    } catch (_e) {
+        // Ignore localStorage failures in constrained environments.
+    }
+}
+
+function _loadFlagsFromLocalStorage() {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (!saved) return;
+        const parsed = JSON.parse(saved);
+        _applyFlags(parsed);
+    } catch (_e) {
+        // Ignore malformed localStorage values.
+    }
+}
+
+async function _saveFlagsToServer() {
+    try {
+        const response = await fetch('/api/settings', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ debug_flags: _flagsPayload() }),
+        });
+        if (!response.ok) {
+            throw new Error(`PATCH /api/settings failed (${response.status})`);
+        }
+    } catch (_e) {
+        // Server sync is best effort; localStorage remains fallback.
+    }
+}
+
+function _scheduleFlagsServerSync() {
+    if (suppressSettingsSync || !flagsReady) return;
+    clearTimeout(saveFlagsTimeout);
+    saveFlagsTimeout = setTimeout(() => {
+        _saveFlagsToServer().catch(() => {});
+    }, 150);
+}
 
 async function flushLogsToServer() {
     if (logBuffer.length === 0) return;
-    
     const logsToSend = [...logBuffer];
     logBuffer = [];
-    
     try {
-        const response = await fetch(DEBUG.SERVER_ENDPOINT, {
+        const response = await fetch(_DEBUG_FLAGS.SERVER_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ logs: logsToSend }),
-            credentials: 'same-origin'
+            credentials: 'same-origin',
         });
         if (!response.ok) {
             console.warn('[DEBUG] Failed to send logs to server:', response.status);
@@ -125,43 +118,85 @@ async function flushLogsToServer() {
 }
 
 function queueLogForServer(level, message, data = null) {
-    if (!DEBUG.SEND_TO_SERVER) return;
-    
+    if (!_DEBUG_FLAGS.SEND_TO_SERVER) return;
     logBuffer.push({ level, message, data });
     clearTimeout(flushTimeout);
     flushTimeout = setTimeout(flushLogsToServer, FLUSH_DELAY_MS);
 }
 
 function formatArgs(args) {
-    return args.map(a => {
-        if (a === null) return 'null';
-        if (a === undefined) return 'undefined';
-        if (typeof a === 'object') {
-            try { return JSON.stringify(a); } catch { return String(a); }
-        }
-        return String(a);
-    }).join(' ');
+    return args
+        .map((a) => {
+            if (a === null) return 'null';
+            if (a === undefined) return 'undefined';
+            if (typeof a === 'object') {
+                try {
+                    return JSON.stringify(a);
+                } catch {
+                    return String(a);
+                }
+            }
+            return String(a);
+        })
+        .join(' ');
+}
+
+export async function syncDebugFlagsFromServer(settingsSnapshot = null) {
+    try {
+        const settings =
+            settingsSnapshot && typeof settingsSnapshot === 'object'
+                ? settingsSnapshot
+                : await fetch('/api/settings', { credentials: 'same-origin' }).then((r) => r.json());
+        suppressSettingsSync = true;
+        _applyFlags(settings?.debug_flags || null);
+        _saveFlagsToLocalStorage();
+        flagsReady = true;
+    } catch (_e) {
+        // Keep current/local fallback flags.
+    } finally {
+        suppressSettingsSync = false;
+    }
+}
+
+const DEBUG_STATE = _DEBUG_FLAGS;
+export const DEBUG = DEBUG_STATE;
+export const DEBUG_FLAGS_READY = () => flagsReady;
+
+export async function setDebugFlag(flag, enabled) {
+    if (!(flag in FLAG_DEFINITIONS)) return;
+    _DEBUG_FLAGS[flag] = !!enabled;
+    _saveFlagsToLocalStorage();
+    _scheduleFlagsServerSync();
+}
+
+export async function setAllDebugFlags(enabled) {
+    for (const key of Object.keys(FLAG_DEFINITIONS)) {
+        _DEBUG_FLAGS[key] = !!enabled;
+    }
+    _saveFlagsToLocalStorage();
+    _scheduleFlagsServerSync();
+}
+
+export function getDebugFlagDefinitions() {
+    return FLAG_DEFINITIONS;
 }
 
 export function debugLog(flag, ...args) {
-    if (!DEBUG[flag]) return;
-    
+    if (!_DEBUG_FLAGS[flag]) return;
     const prefix = `[${flag}]`;
     console.log(prefix, ...args);
     queueLogForServer('info', `${prefix} ${formatArgs(args)}`);
 }
 
 export function debugWarn(flag, ...args) {
-    if (!DEBUG[flag]) return;
-    
+    if (!_DEBUG_FLAGS[flag]) return;
     const prefix = `[${flag}]`;
     console.warn(prefix, ...args);
     queueLogForServer('warn', `${prefix} ${formatArgs(args)}`);
 }
 
 export function debugError(flag, ...args) {
-    if (!DEBUG[flag]) return;
-    
+    if (!_DEBUG_FLAGS[flag]) return;
     const prefix = `[${flag}]`;
     console.error(prefix, ...args);
     queueLogForServer('error', `${prefix} ${formatArgs(args)}`);
@@ -172,7 +207,7 @@ export function serverLog(level, message, data = null) {
 }
 
 export function isDebugEnabled(flag) {
-    return !!DEBUG[flag];
+    return !!_DEBUG_FLAGS[flag];
 }
 
 export function flushLogs() {
@@ -180,12 +215,10 @@ export function flushLogs() {
     flushLogsToServer();
 }
 
-// Flush logs before page unload
+_loadFlagsFromLocalStorage();
+
 if (typeof window !== 'undefined') {
     window.addEventListener('beforeunload', flushLogs);
 }
 
-// Test log on module load
-if (DEBUG.SEND_TO_SERVER) {
-    queueLogForServer('info', '[DEBUG] Frontend debug logging initialized');
-}
+queueLogForServer('info', '[DEBUG] Frontend debug logging initialized');

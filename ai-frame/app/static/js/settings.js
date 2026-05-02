@@ -3,22 +3,15 @@
  */
 
 import { api } from './api.js';
-import { debugLog, debugError, getDebugFlagDefinitions, setDebugFlag, setAllDebugFlags, DEBUG } from './debug-flags.js';
-
-// #region agent log
-/** @param {Record<string, unknown>} payload */
-function _agentHotkeyDbg(payload) {
-    fetch('http://127.0.0.1:7650/ingest/1f0f68f7-585d-47f3-bf1e-99ae25aa7de0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '55f014' },
-        body: JSON.stringify({
-            sessionId: '55f014',
-            timestamp: Date.now(),
-            ...payload,
-        }),
-    }).catch(() => {});
-}
-// #endregion
+import {
+    debugLog,
+    debugError,
+    getDebugFlagDefinitions,
+    setDebugFlag,
+    setAllDebugFlags,
+    syncDebugFlagsFromServer,
+    DEBUG,
+} from './debug-flags.js';
 
 let currentSettings = {};
 
@@ -40,14 +33,7 @@ let dictationHotkeyCaptureField = null;
 let dictationHotkeyKeydownAbort = null;
 
 function stopDictationHotkeyCapture() {
-    // #region agent log
-    _agentHotkeyDbg({
-        location: 'settings.js:stopDictationHotkeyCapture',
-        message: 'hotkey capture stopped',
-        hypothesisId: 'H4',
-        data: { hadListener: !!dictationHotkeyKeydownAbort },
-    });
-    // #endregion
+    debugLog('DICTATION', 'hotkey capture stopped', { hadListener: !!dictationHotkeyKeydownAbort });
     dictationHotkeyKeydownAbort?.abort();
     dictationHotkeyKeydownAbort = null;
     dictationHotkeyCaptureField = null;
@@ -70,14 +56,10 @@ function stopDictationHotkeyCapture() {
 function startDictationHotkeyCapture(field) {
     stopDictationHotkeyCapture();
     dictationHotkeyCaptureField = field;
-    // #region agent log
-    _agentHotkeyDbg({
-        location: 'settings.js:startDictationHotkeyCapture',
-        message: 'hotkey capture started',
-        hypothesisId: 'H4',
-        data: { field, captureSinkExists: !!document.getElementById('dictation-hotkey-capture-sink') },
+    debugLog('DICTATION', 'hotkey capture started', {
+        field,
+        captureSinkExists: !!document.getElementById('dictation-hotkey-capture-sink'),
     });
-    // #endregion
 
     const st = document.getElementById('dictation-hotkey-capture-status');
     const cancelBtn = document.getElementById('dictation-hotkey-capture-cancel');
@@ -95,23 +77,16 @@ function startDictationHotkeyCapture(field) {
     const onKeyDown = async (e) => {
         if (!dictationHotkeyCaptureField) return;
 
-        // #region agent log
-        _agentHotkeyDbg({
-            location: 'settings.js:onKeyDown',
-            message: 'keydown while hotkey capture active',
-            hypothesisId: 'H5',
-            data: {
-                field: dictationHotkeyCaptureField,
-                key: e.key,
-                code: e.code,
-                metaKey: e.metaKey,
-                ctrlKey: e.ctrlKey,
-                altKey: e.altKey,
-                shiftKey: e.shiftKey,
-                defaultPrevented: e.defaultPrevented,
-            },
+        debugLog('DICTATION', 'keydown while hotkey capture active', {
+            field: dictationHotkeyCaptureField,
+            key: e.key,
+            code: e.code,
+            metaKey: e.metaKey,
+            ctrlKey: e.ctrlKey,
+            altKey: e.altKey,
+            shiftKey: e.shiftKey,
+            defaultPrevented: e.defaultPrevented,
         });
-        // #endregion
 
         if (
             e.key === 'Escape' &&
@@ -127,16 +102,12 @@ function startDictationHotkeyCapture(field) {
         }
 
         const chord = eventToChord(e);
-        // #region agent log
         if (!chord) {
-            _agentHotkeyDbg({
-                location: 'settings.js:onKeyDown:no-chord',
-                message: 'eventToChord returned null — no save (need modifier + mappable key)',
-                hypothesisId: 'H1',
-                data: { key: e.key, code: e.code },
+            debugLog('DICTATION', 'eventToChord returned null (need modifier + mappable key)', {
+                key: e.key,
+                code: e.code,
             });
         }
-        // #endregion
         if (!chord) return;
 
         e.preventDefault();
@@ -149,33 +120,15 @@ function startDictationHotkeyCapture(field) {
             which === 'toggle'
                 ? { dictation_hotkey_toggle: chord }
                 : { dictation_hotkey_cancel: chord };
-        // #region agent log
-        _agentHotkeyDbg({
-            location: 'settings.js:onKeyDown:save',
-            message: 'saving hotkey chord',
-            hypothesisId: 'H2',
-            data: { which, chord },
-        });
-        // #endregion
+        debugLog('DICTATION', 'saving hotkey chord', { which, chord });
         try {
             await saveSettings(payload);
-            // #region agent log
-            _agentHotkeyDbg({
-                location: 'settings.js:onKeyDown:save-ok',
-                message: 'saveSettings resolved after hotkey',
-                hypothesisId: 'H2',
-                data: { which },
-            });
-            // #endregion
+            debugLog('DICTATION', 'saveSettings resolved after hotkey', { which });
         } catch (err) {
-            // #region agent log
-            _agentHotkeyDbg({
-                location: 'settings.js:onKeyDown:save-fail',
-                message: 'saveSettings threw',
-                hypothesisId: 'H2',
-                data: { which, errMessage: (err && err.message) || String(err) },
+            debugError('DICTATION', 'saveSettings threw for hotkey', {
+                which,
+                errMessage: (err && err.message) || String(err),
             });
-            // #endregion
             debugError('SETTINGS', 'Hotkey save failed:', err);
             const stEl = document.getElementById('dictation-hotkey-capture-status');
             if (stEl) {
@@ -314,25 +267,18 @@ function eventToChord(e) {
     if (e.altKey || gmAlt) mods.push('alt');
     if (e.shiftKey || gmShift) mods.push('shift');
     if (!mods.length) {
-        // #region agent log
-        _agentHotkeyDbg({
-            location: 'settings.js:eventToChord:no-mods',
-            message: 'no modifiers — chord rejected',
-            hypothesisId: 'H1',
-            data: {
-                key: e.key,
-                code: e.code,
-                metaKey: e.metaKey,
-                ctrlKey: e.ctrlKey,
-                altKey: e.altKey,
-                shiftKey: e.shiftKey,
-                gmMeta,
-                gmCtrl,
-                gmAlt,
-                gmShift,
-            },
+        debugLog('DICTATION', 'no modifiers — chord rejected', {
+            key: e.key,
+            code: e.code,
+            metaKey: e.metaKey,
+            ctrlKey: e.ctrlKey,
+            altKey: e.altKey,
+            shiftKey: e.shiftKey,
+            gmMeta,
+            gmCtrl,
+            gmAlt,
+            gmShift,
         });
-        // #endregion
         return null;
     }
 
@@ -341,34 +287,20 @@ function eventToChord(e) {
     const fromSpecial = normalizeSpecialKey(e.key);
     const key = fromCode || fromSpecial;
     if (!key) {
-        // #region agent log
-        _agentHotkeyDbg({
-            location: 'settings.js:eventToChord:no-key',
-            message: 'key not mappable from code or key',
-            hypothesisId: 'H1',
-            data: {
-                key: e.key,
-                code: e.code,
-                logicalKeyFromCode: fromCode,
-                normalizeSpecialKeyResult: fromSpecial,
-                modifiers: mods,
-            },
+        debugLog('DICTATION', 'key not mappable from code or key', {
+            key: e.key,
+            code: e.code,
+            logicalKeyFromCode: fromCode,
+            normalizeSpecialKeyResult: fromSpecial,
+            modifiers: mods,
         });
-        // #endregion
         return null;
     }
 
     const order = { alt: 0, cmd: 1, ctrl: 2, shift: 3 };
     const uniq = [...new Set(mods)].sort((a, b) => order[a] - order[b]);
     const chord = { modifiers: uniq, key };
-    // #region agent log
-    _agentHotkeyDbg({
-        location: 'settings.js:eventToChord:ok',
-        message: 'chord built',
-        hypothesisId: 'H1',
-        data: { chord, eventKey: e.key, eventCode: e.code },
-    });
-    // #endregion
+    debugLog('DICTATION', 'chord built', { chord, eventKey: e.key, eventCode: e.code });
     return chord;
 }
 
@@ -495,6 +427,7 @@ export async function refreshDictationInputDevices() {
 export async function loadSettings() {
     try {
         currentSettings = await api('/api/settings');
+        await syncDebugFlagsFromServer(currentSettings);
         debugLog('SETTINGS', 'Loaded settings:', currentSettings);
         applySettings(currentSettings);
         return currentSettings;
@@ -512,26 +445,19 @@ export async function saveSettings(updates) {
         updates &&
         typeof updates === 'object' &&
         ('dictation_hotkey_toggle' in updates || 'dictation_hotkey_cancel' in updates);
-    // #region agent log
     if (hotPatch) {
-        const safe = { ...updates };
-        _agentHotkeyDbg({
-            location: 'settings.js:saveSettings:entry',
-            message: 'PATCH settings includes hotkey field(s)',
-            hypothesisId: 'H2',
-            data: {
-                keys: Object.keys(updates),
-                toggle: updates.dictation_hotkey_toggle,
-                cancel: updates.dictation_hotkey_cancel,
-            },
+        debugLog('DICTATION', 'PATCH settings includes hotkey field(s)', {
+            keys: Object.keys(updates),
+            toggle: updates.dictation_hotkey_toggle,
+            cancel: updates.dictation_hotkey_cancel,
         });
     }
-    // #endregion
     try {
         currentSettings = await api('/api/settings', {
             method: 'PATCH',
             body: updates
         });
+        await syncDebugFlagsFromServer(currentSettings);
         debugLog('SETTINGS', 'Saved settings');
         applySettings(currentSettings);
         window.dispatchEvent(
@@ -539,16 +465,11 @@ export async function saveSettings(updates) {
         );
         return currentSettings;
     } catch (e) {
-        // #region agent log
         if (hotPatch) {
-            _agentHotkeyDbg({
-                location: 'settings.js:saveSettings:catch',
-                message: 'saveSettings failed for hotkey patch',
-                hypothesisId: 'H2',
-                data: { errMessage: (e && e.message) || String(e) },
+            debugError('DICTATION', 'saveSettings failed for hotkey patch', {
+                errMessage: (e && e.message) || String(e),
             });
         }
-        // #endregion
         debugError('SETTINGS', 'Failed to save:', e);
         throw e;
     }
@@ -1016,8 +937,9 @@ export function renderDebugFlags() {
     
     // Add event listeners
     container.querySelectorAll('input[data-flag]').forEach(checkbox => {
-        checkbox.addEventListener('change', (e) => {
-            setDebugFlag(e.target.dataset.flag, e.target.checked);
+        checkbox.addEventListener('change', async (e) => {
+            await setDebugFlag(e.target.dataset.flag, e.target.checked);
+            renderDebugFlags();
         });
     });
     
@@ -1378,15 +1300,15 @@ export function initSettings() {
     const allOff = document.getElementById('debug-flags-all-off');
     
     if (allOn) {
-        allOn.addEventListener('click', () => {
-            setAllDebugFlags(true);
+        allOn.addEventListener('click', async () => {
+            await setAllDebugFlags(true);
             renderDebugFlags();
         });
     }
     
     if (allOff) {
-        allOff.addEventListener('click', () => {
-            setAllDebugFlags(false);
+        allOff.addEventListener('click', async () => {
+            await setAllDebugFlags(false);
             renderDebugFlags();
         });
     }

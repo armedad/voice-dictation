@@ -190,13 +190,23 @@ function setupEventListeners() {
         /** True while a record-and-type request is in flight (second click cancels mic capture). */
         let dictateSessionActive = false;
         dictateBtn.addEventListener('click', async () => {
+            debugLog('DICTATION', 'dictate button clicked', {
+                dictateSessionActive,
+                buttonText: dictateBtn.textContent || '',
+            });
             if (dictateSessionActive) {
                 try {
                     debugLog('DICTATION', 'POST /api/dictation/hotkey/cancel (stop recording)');
                     await api('dictation/hotkey/cancel', { method: 'POST', body: {} });
+                    debugLog('DICTATION', 'cancel API returned ok', {
+                        dictateSessionActive,
+                    });
                     dictateBtn.textContent = 'Stopping…';
                 } catch (e) {
                     debugWarn('DICTATION', 'hotkey/cancel failed:', e?.message || e);
+                    debugWarn('DICTATION', 'cancel API failed', {
+                        error: e?.message || String(e),
+                    });
                     alert(e.message || 'Could not stop dictation');
                 }
                 return;
@@ -226,6 +236,10 @@ function setupEventListeners() {
                 dictateBtn.textContent = defaultLabel;
                 alert(e.message || 'Dictation failed');
             } finally {
+                debugLog('DICTATION', 'dictation request finished/finally', {
+                    beforeResetActive: dictateSessionActive,
+                    finalText: dictateBtn.textContent || '',
+                });
                 dictateSessionActive = false;
             }
         });

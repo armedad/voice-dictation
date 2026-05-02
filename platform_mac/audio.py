@@ -8,28 +8,17 @@ import json
 
 import numpy as np
 import sounddevice as sd
-
-_DEBUG_LOG_PATH = "/Users/chee/zapier ai project/.cursor/debug-55f014.log"
-_DEBUG_SESSION_ID = "55f014"
+from core.debug_flags_logging import log_debug
 
 
 def _debug_emit(location: str, message: str, data: dict) -> None:
-    # region agent log
-    payload = {
-        "sessionId": _DEBUG_SESSION_ID,
-        "runId": "dictation-latency",
-        "hypothesisId": "H_AUDIO",
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    try:
-        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=True) + "\n")
-    except OSError:
-        pass
-    # endregion
+    log_debug(
+        username=None,
+        flag="DICTATION",
+        level="INFO",
+        message=message,
+        data={"location": location, **data},
+    )
 
 
 def record_wav_bytes(duration_s: float, sample_rate: int = 16000) -> bytes:
