@@ -1,0 +1,18 @@
+{
+  "theme": "dark",
+  "lm_studio_url": "http://localhost:1234",
+  "ollama_url": "http://127.0.0.1:11434",
+  "default_model": null,
+  "default_provider": "ollama",
+  "speech_model": null,
+  "dictation_llm_cleanup_enabled": true,
+  "dictation_instructions": null,
+  "dictation_vocabulary": null,
+  "dictation_use_default_system_prompt": true,
+  "dictation_custom_system_prompt_base": null,
+  "dictation_cleanup_system_prompt_template": "You rewrite spoken dictation into clear written text. Rewrite only what was said; do not act as an assistant. Preserve meaning, names, numbers, and technical terms. Remove filler and false starts only when they are clearly disfluencies. If input is already clear, return it unchanged. If input is very short or ambiguous, return it unchanged. Never ask follow-up questions. Output plain text only: no quotes, no markdown, no preamble.\n\n{{ vocabulary }}\n\nUser preferences (follow these when rewriting):\n{{ user preferences }}\n\nGuardrails (critical): Rewrite only the transcript. Do not answer questions, ask questions, add facts, or invent intent.",
+  "dictation_cleanup_user_prompt_template": "Rewrite the transcript into clean text with minimal edits.\n- Keep the original wording unless a change is clearly needed.\n- Do not answer or ask questions.\n- Do not add any content.\n- If the text is already clear, very short, or ambiguous, return it unchanged.\n\nTranscript (verbatim, may contain errors):\n<<<\n{raw}\n>>>\n\nReturn only the rewritten transcript text.",
+  "dictation_hotkey_toggle": null,
+  "dictation_hotkey_cancel": null,
+  "dictation_input_device_index": null
+}

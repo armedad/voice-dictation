@@ -72,6 +72,15 @@ python run_agent.py record-once --seconds 4 --no-type
 
 First run creates **`~/.voice-dictation/config.json`** from the example file if missing. To re-seed after we change defaults, delete that file and run again.
 
+## Debug Logging
+
+- The **Settings → Debug → Debug Flags** UI is the shared logging control plane for both frontend and backend debug traces.
+- Frontend flags are persisted in per-user settings (`ai-frame/users/<username>/settings.json` under `debug_flags`) and mirrored to localStorage only as a bootstrap/offline fallback.
+- Backend debug traces now route through the same flag categories and write to the daily ai-frame log (`ai-frame/logs/aiframe_YYYYMMDD.log`).
+- Strong-reason exceptions kept outside debug flags:
+  - startup/boot banners emitted before user settings are available,
+  - crash-path stderr messages where process-level visibility is required.
+
 ## Next build steps (not in spike)
 
 1. **Agent + tray** (per OS): **Start**, **Stop & process**, and **Cancel** shortcuts; idle/recording **tray/menu bar state** + **start/stop sounds**; open **localhost settings** for **transcription** vs **cleanup** backends (user-picked models/endpoints/keys).

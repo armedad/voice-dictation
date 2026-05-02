@@ -13,37 +13,25 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
-import json
 import logging
 from ctypes import POINTER, Structure, byref, c_uint32, c_ulong, c_void_p
 import threading
-import time
 from typing import Any, Callable
 
 from core.hotkey_chord import parse_chord_or_raise
+from core.debug_flags_logging import log_debug
 
 _LOG = logging.getLogger("hotkey_agent.carbon")
-_DEBUG_LOG_PATH = "/Users/chee/zapier ai project/.cursor/debug-55f014.log"
-_DEBUG_SESSION_ID = "55f014"
 
 
 def _debug_emit(location: str, message: str, data: dict[str, Any]) -> None:
-    # region agent log
-    payload = {
-        "sessionId": _DEBUG_SESSION_ID,
-        "runId": f"carbon-{int(time.time())}",
-        "hypothesisId": "H5",
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    try:
-        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=True) + "\n")
-    except OSError:
-        pass
-    # endregion
+    log_debug(
+        username=None,
+        flag="DICTATION",
+        level="INFO",
+        message=message,
+        data={"location": location, **data},
+    )
 
 # --- Carbon four-char codes (OSType / EventParamName / EventParamType) ---
 

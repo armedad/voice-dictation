@@ -8,17 +8,11 @@ Modes:
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 import threading
-import time
 from pathlib import Path
-
-# #region agent log
-_DEBUG_LOG_PATH = "/Users/chee/zapier ai project/.cursor/debug-55f014.log"
-_DEBUG_SESSION_ID = "55f014"
-
+from core.debug_flags_logging import log_system
 
 def _debug_emit(
     *,
@@ -28,26 +22,16 @@ def _debug_emit(
     data: dict,
     run_id: str = "combined-startup",
 ) -> None:
-    line = json.dumps(
-        {
-            "sessionId": _DEBUG_SESSION_ID,
-            "runId": run_id,
-            "hypothesisId": hypothesis_id,
+    log_system(
+        level="INFO",
+        message=message,
+        data={
             "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
+            "run_id": run_id,
+            "hypothesis_id": hypothesis_id,
+            **data,
         },
-        ensure_ascii=True,
     )
-    try:
-        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
-    except OSError:
-        pass
-
-
-# #endregion
 
 
 def main() -> None:

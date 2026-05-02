@@ -6,9 +6,9 @@ import json
 import os
 import secrets
 import subprocess
+import time
 import sys
 import threading
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -25,28 +25,18 @@ from app.services.dictation_cleanup import (
 )
 from app.services.storage import Settings, UserDataStore, USERS_DIR
 from app.services.dictation_events import publish_event
-
-_DEBUG_LOG_PATH = "/Users/chee/zapier ai project/.cursor/debug-55f014.log"
-_DEBUG_SESSION_ID = "55f014"
+from core.debug_flags_logging import log_debug, log_system
 
 
 def _debug_emit(location: str, message: str, data: dict[str, Any]) -> None:
-    # region agent log
-    payload = {
-        "sessionId": _DEBUG_SESSION_ID,
-        "runId": "dictation-sse",
-        "hypothesisId": "H_DELAY",
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    try:
-        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=True) + "\n")
-    except OSError:
-        pass
-    # endregion
+    username = data.get("user") if isinstance(data.get("user"), str) else None
+    log_debug(
+        username=username,
+        flag="DICTATION",
+        level="INFO",
+        message=message,
+        data={"location": location, **data},
+    )
 
 router = APIRouter(tags=["dictation"])
 
@@ -112,13 +102,13 @@ def _set_dictation_stop() -> None:
 
 
 async def _dictation_console_heartbeat(stop: asyncio.Event) -> None:
-    """Print ``dictating`` every ``_DICTATION_CONSOLE_INTERVAL_SEC`` until ``stop`` is set."""
+    """Emit ``dictating`` heartbeat every interval until ``stop`` is set."""
     while not stop.is_set():
         try:
             await asyncio.wait_for(stop.wait(), timeout=_DICTATION_CONSOLE_INTERVAL_SEC)
             return
         except asyncio.TimeoutError:
-            print("dictating", flush=True)
+            log_system(level="INFO", message="dictating")
 
 
 def _emit_overlap(store: UserDataStore, source: str) -> None:
@@ -145,13 +135,8 @@ def _require_loopback(request: Request) -> None:
 
 
 def _dictation_server_log(message: str, data: dict[str, Any] | None = None) -> None:
-    """Append to daily ai-frame log (same sink as client debug logs)."""
-    try:
-        from app.routers.client_log import write_to_log_file
-
-        write_to_log_file("INFO", message, data)
-    except Exception:
-        pass
+    """Append to unified daily ai-frame log."""
+    log_system(level="INFO", message=message, data=data)
 
 
 def _maybe_dictation_ui_sound(kind: str) -> None:
@@ -665,7 +650,7 @@ async def _execute_dictation(
     _maybe_dictation_ui_sound("start")
     cancel_event.clear()
     _dictation_stop.clear()
-    print("start dictating", flush=True)
+    log_system(level="INFO", message="start dictating", data={"source": source, "user": store.username})
     console_stop = asyncio.Event()
     hb_task = asyncio.create_task(_dictation_console_heartbeat(console_stop))
     try:
@@ -841,7 +826,7 @@ async def _execute_dictation(
     finally:
         console_stop.set()
         await hb_task
-        print("stop dictating", flush=True)
+        log_system(level="INFO", message="stop dictating", data={"source": source, "user": store.username})
 
 
 @router.post("/dictation/record-and-type")
@@ -982,12 +967,31 @@ async def dictation_hotkey_agent_status(request: Request) -> dict[str, Any]:
 async def dictation_hotkey_cancel(request: Request) -> dict[str, Any]:
     """Signal in-process dictation recording to stop (loopback-only)."""
     _require_loopback(request)
+    _debug_emit(
+        "app/routers/dictation.py:hotkey_cancel",
+        "hotkey cancel endpoint hit",
+        {
+            "client": request.client.host if request.client else None,
+            "active": _dictation_active,
+            "cancel_event_before": _dictation_cancel.is_set(),
+            "stop_event_before": _dictation_stop.is_set(),
+        },
+    )
     _dictation_server_log(
         "dictation cancel requested",
         {"client": request.client.host if request.client else None},
     )
     _set_dictation_cancel()
     _set_dictation_stop()
+    _debug_emit(
+        "app/routers/dictation.py:hotkey_cancel",
+        "hotkey cancel flags set",
+        {
+            "active": _dictation_active,
+            "cancel_event_after": _dictation_cancel.is_set(),
+            "stop_event_after": _dictation_stop.is_set(),
+        },
+    )
     session_user = request.cookies.get("aiframe_session") or ""
     if session_user:
         publish_event(session_user, "dictation_cancel_signal", {})

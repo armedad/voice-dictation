@@ -107,6 +107,12 @@ if "%WITH_SPIKE%"=="1" (
   if errorlevel 1 exit /b 1
 )
 
+if exist "%ROOT%\config\default-ai-frame-settings.json" if not exist "%ROOT%\ai-frame\users\_default\settings.json" (
+  echo ==^> Seeding ai-frame default settings ...
+  if not exist "%ROOT%\ai-frame\users\_default" mkdir "%ROOT%\ai-frame\users\_default"
+  copy /y "%ROOT%\config\default-ai-frame-settings.json" "%ROOT%\ai-frame\users\_default\settings.json" >nul
+)
+
 if not defined VOICE_DICTATION_WHISPER_DEVICE set "VOICE_DICTATION_WHISPER_DEVICE=cpu"
 if not defined VOICE_DICTATION_WHISPER_COMPUTE set "VOICE_DICTATION_WHISPER_COMPUTE=int8"
 

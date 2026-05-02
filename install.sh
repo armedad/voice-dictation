@@ -119,6 +119,14 @@ if [[ "$WITH_SPIKE" == true ]]; then
   python -m pip install -r spike/requirements.txt
 fi
 
+DEFAULT_SETTINGS_SRC="$ROOT/config/default-ai-frame-settings.json"
+DEFAULT_SETTINGS_DST="$ROOT/ai-frame/users/_default/settings.json"
+if [[ -f "$DEFAULT_SETTINGS_SRC" && ! -f "$DEFAULT_SETTINGS_DST" ]]; then
+  echo "==> Seeding ai-frame default settings ..."
+  mkdir -p "$ROOT/ai-frame/users/_default"
+  cp "$DEFAULT_SETTINGS_SRC" "$DEFAULT_SETTINGS_DST"
+fi
+
 export INSTALL_ROOT="$ROOT"
 export VOICE_DICTATION_WHISPER_DEVICE="${VOICE_DICTATION_WHISPER_DEVICE:-cpu}"
 export VOICE_DICTATION_WHISPER_COMPUTE="${VOICE_DICTATION_WHISPER_COMPUTE:-int8}"

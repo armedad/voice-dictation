@@ -25,8 +25,6 @@ from typing import Any
 import httpx
 
 _DEFAULT_HOTKEY_PING_PORT = 18447
-_DEBUG_LOG_PATH = "/Users/chee/zapier ai project/.cursor/debug-55f014.log"
-_DEBUG_SESSION_ID = "55f014"
 
 # Repo root (parent of platform_mac/)
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,6 +32,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from core.hotkey_chord import normalize_chord
+from core.debug_flags_logging import log_debug
 
 _LOG = logging.getLogger("hotkey_agent")
 
@@ -46,20 +45,19 @@ def _debug_emit(
     message: str,
     data: dict[str, Any],
 ) -> None:
-    payload = {
-        "sessionId": _DEBUG_SESSION_ID,
-        "runId": run_id,
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    try:
-        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=True) + "\n")
-    except OSError:
-        pass
+    username = data.get("username") if isinstance(data.get("username"), str) else None
+    log_debug(
+        username=username,
+        flag="DICTATION",
+        level="INFO",
+        message=message,
+        data={
+            "location": location,
+            "run_id": run_id,
+            "hypothesis_id": hypothesis_id,
+            **data,
+        },
+    )
 
 
 def _users_dir() -> Path:
