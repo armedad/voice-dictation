@@ -12,7 +12,7 @@ router = APIRouter(tags=["providers"])
 
 def get_user_data_dir(request: Request) -> Path:
     """Get the data directory for the current user."""
-    session_user = request.cookies.get("aiframe_session")
+    session_user = request.cookies.get("twim_session")
     if session_user:
         return users.get_user_data_dir(session_user)
     return DEFAULT_DATA_DIR

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the ai-frame server."""
+"""Run the twim server."""
 import uvicorn
 import sys
 from pathlib import Path

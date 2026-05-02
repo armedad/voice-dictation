@@ -40,7 +40,7 @@ async def run_pipeline(
 
     ``transcription_endpoint`` overrides STT for this run (e.g. from Settings speech model).
 
-    When ``cleanup_endpoint`` is set (from ai-frame Settings), it drives cleanup URL/model.
+    When ``cleanup_endpoint`` is set (from twim Settings), it drives cleanup URL/model.
     ``cleanup_openai_api_key``: ``None`` lets OpenAI-compatible cleanup use env keys when
     using file-based cleanup; ``\"\"`` for no Authorization header (e.g. LM Studio); else
     the API key string.
@@ -62,7 +62,7 @@ async def run_pipeline(
     ``cleanup_debug_log``: if set, invoked with a dict describing whether the cleanup LLM
     ran; when it runs, includes truncated ``cleanup_system_message`` / ``cleanup_user_message``.
 
-    ``cleanup_skip_gate_code``: when ai-frame skips cleanup before STT, pass the gate reason
+    ``cleanup_skip_gate_code``: when twim skips cleanup before STT, pass the gate reason
     (e.g. ``dictation_llm_cleanup_enabled_false``) so skip logs are unambiguous.
 
     When ``cleanup_endpoint`` is omitted, ``~/.voice-dictation/config.json`` cleanup is used.

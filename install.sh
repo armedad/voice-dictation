@@ -4,11 +4,11 @@
 # Windows: use install.bat in this directory (same flags, shared scripts/install_post_pip.py).
 #
 # Usage:
-#   ./install.sh                  # full: agent + ai-frame + faster-whisper weights + ollama pull
+#   ./install.sh                  # full: agent + twim + faster-whisper weights + ollama pull
 #   ./install.sh --agent-only     # venv + requirements-agent.txt only
 #   ./install.sh --skip-ollama    # skip `ollama pull`
 #   ./install.sh --skip-whisper   # skip faster-whisper weight download
-#   ./install.sh --skip-ai-frame  # skip ai-frame UI dependencies
+#   ./install.sh --skip-twim      # skip twim UI dependencies (alias: --skip-ai-frame)
 #   ./install.sh --with-spike     # also install spike/ requirements (mac permission lab)
 #   ./install.sh --recreate-venv  # rm -rf .venv before creating
 #
@@ -23,7 +23,7 @@ cd "$ROOT"
 AGENT_ONLY=false
 SKIP_OLLAMA=false
 SKIP_WHISPER=false
-SKIP_AI_FRAME=false
+SKIP_TWIM=false
 WITH_SPIKE=false
 RECREATE_VENV=false
 
@@ -32,7 +32,7 @@ for arg in "$@"; do
     --agent-only) AGENT_ONLY=true ;;
     --skip-ollama) SKIP_OLLAMA=true ;;
     --skip-whisper) SKIP_WHISPER=true ;;
-    --skip-ai-frame) SKIP_AI_FRAME=true ;;
+    --skip-twim|--skip-ai-frame) SKIP_TWIM=true ;;
     --with-spike) WITH_SPIKE=true ;;
     --recreate-venv) RECREATE_VENV=true ;;
     -h|--help)
@@ -43,7 +43,7 @@ for arg in "$@"; do
 done
 
 if [[ "$AGENT_ONLY" == true ]]; then
-  SKIP_AI_FRAME=true
+  SKIP_TWIM=true
   SKIP_OLLAMA=true
   SKIP_WHISPER=true
   WITH_SPIKE=false
@@ -109,9 +109,9 @@ if ! python -c 'import importlib; raise SystemExit(0 if importlib.util.find_spec
   python -m pip install quickmachotkey
 fi
 
-if [[ "$SKIP_AI_FRAME" != true ]]; then
-  echo "==> Installing ai-frame (settings UI) dependencies ..."
-  python -m pip install -r ai-frame/requirements.txt
+if [[ "$SKIP_TWIM" != true ]]; then
+  echo "==> Installing twim (settings UI) dependencies ..."
+  python -m pip install -r twim/requirements.txt
 fi
 
 if [[ "$WITH_SPIKE" == true ]]; then
@@ -119,11 +119,11 @@ if [[ "$WITH_SPIKE" == true ]]; then
   python -m pip install -r spike/requirements.txt
 fi
 
-DEFAULT_SETTINGS_SRC="$ROOT/config/default-ai-frame-settings.json"
-DEFAULT_SETTINGS_DST="$ROOT/ai-frame/users/_default/settings.json"
+DEFAULT_SETTINGS_SRC="$ROOT/config/default-twim-settings.json"
+DEFAULT_SETTINGS_DST="$ROOT/twim/users/_default/settings.json"
 if [[ -f "$DEFAULT_SETTINGS_SRC" && ! -f "$DEFAULT_SETTINGS_DST" ]]; then
-  echo "==> Seeding ai-frame default settings ..."
-  mkdir -p "$ROOT/ai-frame/users/_default"
+  echo "==> Seeding twim default settings ..."
+  mkdir -p "$ROOT/twim/users/_default"
   cp "$DEFAULT_SETTINGS_SRC" "$DEFAULT_SETTINGS_DST"
 fi
 

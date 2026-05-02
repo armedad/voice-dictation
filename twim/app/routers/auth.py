@@ -35,7 +35,7 @@ async def login(request: LoginRequest, response: Response):
     expires = datetime.now(timezone.utc) + timedelta(days=30)
     
     response.set_cookie(
-        key="aiframe_session",
+        key="twim_session",
         value=user.username,
         httponly=True,
         samesite="lax",
@@ -54,7 +54,7 @@ async def login(request: LoginRequest, response: Response):
 @router.post("/auth/logout")
 async def logout(response: Response):
     """Log out current user."""
-    response.delete_cookie(key="aiframe_session", path="/")
+    response.delete_cookie(key="twim_session", path="/")
     return {"success": True}
 
 
@@ -79,7 +79,7 @@ async def register(request: RegisterRequest, response: Response):
     
     expires = datetime.now(timezone.utc) + timedelta(days=30)
     response.set_cookie(
-        key="aiframe_session",
+        key="twim_session",
         value=user.username,
         httponly=True,
         samesite="lax",
@@ -98,7 +98,7 @@ async def register(request: RegisterRequest, response: Response):
 @router.get("/auth/me")
 async def get_current_user(request: Request, response: Response):
     """Get current logged-in user info."""
-    session_user = request.cookies.get("aiframe_session")
+    session_user = request.cookies.get("twim_session")
     
     if not session_user:
         return {"logged_in": False}
@@ -110,7 +110,7 @@ async def get_current_user(request: Request, response: Response):
     # Refresh cookie
     expires = datetime.now(timezone.utc) + timedelta(days=30)
     response.set_cookie(
-        key="aiframe_session",
+        key="twim_session",
         value=user.username,
         httponly=True,
         samesite="lax",

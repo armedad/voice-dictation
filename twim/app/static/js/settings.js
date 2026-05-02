@@ -461,7 +461,7 @@ export async function saveSettings(updates) {
         debugLog('SETTINGS', 'Saved settings');
         applySettings(currentSettings);
         window.dispatchEvent(
-            new CustomEvent('aiframe-settings-saved', { detail: { ...currentSettings } })
+            new CustomEvent('twim-settings-saved', { detail: { ...currentSettings } })
         );
         return currentSettings;
     } catch (e) {
@@ -1020,7 +1020,7 @@ export function initSettings() {
             if (page) page.classList.add('active');
             
             // Save last tab
-            localStorage.setItem('aiframe_settings_tab', tab.dataset.tab);
+            localStorage.setItem('twim_settings_tab', tab.dataset.tab);
             if (tab.dataset.tab === 'preferences') {
                 refreshDictationInputDevices().catch((e) => debugError('SETTINGS', e));
             }
@@ -1028,7 +1028,7 @@ export function initSettings() {
     });
     
     // Restore last tab
-    const lastTab = localStorage.getItem('aiframe_settings_tab');
+    const lastTab = localStorage.getItem('twim_settings_tab');
     if (lastTab) {
         const tab = document.querySelector(`.settings-tab[data-tab="${lastTab}"]`);
         if (tab) tab.click();

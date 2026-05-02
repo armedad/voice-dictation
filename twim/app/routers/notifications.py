@@ -16,7 +16,7 @@ router = APIRouter(tags=["notifications"])
 
 def get_user_store(request: Request) -> UserDataStore:
     """Get the data store for the current user."""
-    session_user = request.cookies.get("aiframe_session")
+    session_user = request.cookies.get("twim_session")
     if session_user:
         data_dir = users.get_user_data_dir(session_user)
         return UserDataStore(data_dir, session_user)
@@ -33,9 +33,9 @@ class AddNotificationRequest(BaseModel):
 @router.get("/notifications/stream")
 async def notifications_stream(request: Request) -> EventSourceResponse:
     """SSE: notification list changes (client should refetch GET /notifications)."""
-    if not request.cookies.get("aiframe_session"):
+    if not request.cookies.get("twim_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
-    session_user = request.cookies.get("aiframe_session") or ""
+    session_user = request.cookies.get("twim_session") or ""
     if not users.get_user(session_user):
         raise HTTPException(status_code=404, detail="User not found")
 

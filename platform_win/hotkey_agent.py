@@ -2,8 +2,8 @@
 Windows global dictation hotkeys: pynput ``GlobalHotKeys`` + httpx to local FastAPI.
 
 Env:
-  VOICE_DICTATION_PORT — default 8000 (ai-frame URL for toggle/cancel POST)
-  VOICE_DICTATION_AI_FRAME_USER — username under ai-frame/users/
+  VOICE_DICTATION_PORT — default 8000 (twim URL for toggle/cancel POST)
+  VOICE_DICTATION_TWIM_USER — username under twim/users/ (legacy: VOICE_DICTATION_AI_FRAME_USER)
   VOICE_DICTATION_HOTKEY_PING_PORT — loopback HTTP ``/health`` (default 18447)
 """
 from __future__ import annotations
@@ -33,11 +33,15 @@ _LOG = logging.getLogger("hotkey_agent")
 
 
 def _users_dir() -> Path:
-    return ROOT / "ai-frame" / "users"
+    return ROOT / "twim" / "users"
 
 
 def _resolve_username() -> str:
-    env_u = (os.environ.get("VOICE_DICTATION_AI_FRAME_USER") or "").strip()
+    env_u = (
+        os.environ.get("VOICE_DICTATION_TWIM_USER")
+        or os.environ.get("VOICE_DICTATION_AI_FRAME_USER")
+        or ""
+    ).strip()
     if env_u:
         return env_u
     marker = _users_dir() / ".hotkey_agent_target_username"
@@ -114,8 +118,8 @@ def main() -> None:
     username = _resolve_username()
     if not username:
         _LOG.error(
-            "No hotkey agent user: set VOICE_DICTATION_AI_FRAME_USER, or save a dictation "
-            "hotkey in Preferences while logged in (writes ai-frame/users/.hotkey_agent_target_username)."
+            "No hotkey agent user: set VOICE_DICTATION_TWIM_USER (or legacy VOICE_DICTATION_AI_FRAME_USER), "
+            "or save a dictation hotkey in Preferences while logged in (writes twim/users/.hotkey_agent_target_username)."
         )
         sys.exit(1)
 

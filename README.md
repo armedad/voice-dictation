@@ -4,18 +4,18 @@ Personal **macOS + Windows** loop: **hotkey → dictate → transcribe → LLM c
 
 This folder implements the **feasibility plan**: written scope, stack choice, and a **runnable permissions spike** (no cloud APIs yet).
 
-## Starter UI (ai-frame — Python base)
+## Starter UI (twim — Python base)
 
-[`ai-frame/`](ai-frame/) is the **in-repo Python starting point** (FastAPI + static JS) for **localhost settings** and provider/model UI patterns. It was copied from [`../ai-frame`](../ai-frame/) with `users/chee/` and `logs/` excluded and `users/users.json` reset. **Product direction:** grow dictation features here (or refactor into `apps/settings_server/`) under the same **Python** stack as [`docs/2026-04-23-stack-decision.md`](docs/2026-04-23-stack-decision.md).
+[`twim/`](twim/) is the **in-repo** FastAPI + static JS app for **localhost settings** and provider/model UI. **Product direction:** grow dictation features here (or refactor into `apps/settings_server/`) under the same **Python** stack as [`docs/2026-04-23-stack-decision.md`](docs/2026-04-23-stack-decision.md).
 
 ## Configuration (model abstraction)
 
-Transcription and cleanup use **separate** settings. See [`config/example-model-settings.json`](config/example-model-settings.json): top-level `transcription` vs `cleanup`. The **Python** process loads that shape (or an equivalent merged with ai-frame settings); **secrets** belong in **OS stores** via `platform_*` modules, not long-term plaintext in JSON.
+Transcription and cleanup use **separate** settings. See [`config/example-model-settings.json`](config/example-model-settings.json): top-level `transcription` vs `cleanup`. The **Python** process loads that shape (or an equivalent merged with twim settings); **secrets** belong in **OS stores** via `platform_*` modules, not long-term plaintext in JSON.
 
 ## Documents
 
 - [MVP scope](docs/2026-04-23-mvp-scope.md) — start/stop/cancel shortcuts, menu bar + sounds, strict synthetic typing, **independently user-configured** transcription vs cleanup models/providers.
-- [Stack decision](docs/2026-04-23-stack-decision.md) — **Python** shared core + **`platform_mac` / `platform_win`**; **localhost** settings (evolve **ai-frame**); **spike** mac lab only.
+- [Stack decision](docs/2026-04-23-stack-decision.md) — **Python** shared core + **`platform_mac` / `platform_win`**; **localhost** settings (**twim**); **spike** mac lab only.
 - [Permissions spike checklist](docs/2026-04-23-permissions-spike-checklist.md) — Browser, Slack, Terminal verification steps.
 
 ## One-shot install (macOS-friendly)
@@ -24,7 +24,7 @@ From [`coding/voice-dictation-mvp/`](.):
 
 ```bash
 ./install.sh              # venv, deps, PortAudio (brew), faster-whisper weights, ollama pull
-./install.sh --help       # flags: --agent-only, --skip-ollama, --skip-whisper, --skip-ai-frame, --with-spike, --recreate-venv
+./install.sh --help       # flags: --agent-only, --skip-ollama, --skip-whisper, --skip-twim, --with-spike, --recreate-venv
 ```
 
 ## Start settings server
@@ -75,8 +75,8 @@ First run creates **`~/.voice-dictation/config.json`** from the example file if 
 ## Debug Logging
 
 - The **Settings → Debug → Debug Flags** UI is the shared logging control plane for both frontend and backend debug traces.
-- Frontend flags are persisted in per-user settings (`ai-frame/users/<username>/settings.json` under `debug_flags`) and mirrored to localStorage only as a bootstrap/offline fallback.
-- Backend debug traces now route through the same flag categories and write to the daily ai-frame log (`ai-frame/logs/aiframe_YYYYMMDD.log`).
+- Frontend flags are persisted in per-user settings (`twim/users/<username>/settings.json` under `debug_flags`) and mirrored to localStorage only as a bootstrap/offline fallback.
+- Backend debug traces now route through the same flag categories and write to the daily twim log (`twim/logs/twim_YYYYMMDD.log`).
 - Strong-reason exceptions kept outside debug flags:
   - startup/boot banners emitted before user settings are available,
   - crash-path stderr messages where process-level visibility is required.

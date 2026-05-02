@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 _ROOT = Path(__file__).resolve().parent.parent
-_USERS_DIR = _ROOT / "ai-frame" / "users"
-_LOGS_DIR = _ROOT / "ai-frame" / "logs"
+_USERS_DIR = _ROOT / "twim" / "users"
+_LOGS_DIR = _ROOT / "twim" / "logs"
 
 _DEFAULT_FLAGS: dict[str, bool] = {
     "AUTH": True,
@@ -32,7 +32,7 @@ def _write_to_daily_log(level: str, message: str, data: dict[str, Any] | None = 
     try:
         _LOGS_DIR.mkdir(parents=True, exist_ok=True)
         day = datetime.now().strftime("%Y%m%d")
-        log_file = _LOGS_DIR / f"aiframe_{day}.log"
+        log_file = _LOGS_DIR / f"twim_{day}.log"
         suffix = f" | {data}" if data else ""
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(f"[{_now_ts()}] [{level}] {message}{suffix}\n")

@@ -8,7 +8,7 @@ rem --- defaults (mirror install.sh) ---
 set "AGENT_ONLY=0"
 set "SKIP_OLLAMA=0"
 set "SKIP_WHISPER=0"
-set "SKIP_AI_FRAME=0"
+set "SKIP_TWIM=0"
 set "WITH_SPIKE=0"
 set "RECREATE_VENV=0"
 
@@ -17,7 +17,8 @@ if "%~1"=="" goto parsed
 if /i "%~1"=="--agent-only" (set "AGENT_ONLY=1" & shift & goto parse)
 if /i "%~1"=="--skip-ollama" (set "SKIP_OLLAMA=1" & shift & goto parse)
 if /i "%~1"=="--skip-whisper" (set "SKIP_WHISPER=1" & shift & goto parse)
-if /i "%~1"=="--skip-ai-frame" (set "SKIP_AI_FRAME=1" & shift & goto parse)
+if /i "%~1"=="--skip-twim" (set "SKIP_TWIM=1" & shift & goto parse)
+if /i "%~1"=="--skip-ai-frame" (set "SKIP_TWIM=1" & shift & goto parse)
 if /i "%~1"=="--with-spike" (set "WITH_SPIKE=1" & shift & goto parse)
 if /i "%~1"=="--recreate-venv" (set "RECREATE_VENV=1" & shift & goto parse)
 if /i "%~1"=="-h" goto help
@@ -29,11 +30,12 @@ exit /b 1
 echo Voice dictation MVP — Windows install (venv, pip deps, optional Whisper/Ollama).
 echo.
 echo Usage:
-echo   install.bat                  full: agent + ai-frame + faster-whisper + ollama pull
+echo   install.bat                  full: agent + twim + faster-whisper + ollama pull
 echo   install.bat --agent-only     venv + requirements-agent.txt only
 echo   install.bat --skip-ollama
 echo   install.bat --skip-whisper
-echo   install.bat --skip-ai-frame
+echo   install.bat --skip-twim
+echo   install.bat --skip-ai-frame   ^(deprecated alias for --skip-twim^)
 echo   install.bat --with-spike
 echo   install.bat --recreate-venv
 echo.
@@ -44,7 +46,7 @@ exit /b 0
 
 :parsed
 if "%AGENT_ONLY%"=="1" (
-  set "SKIP_AI_FRAME=1"
+  set "SKIP_TWIM=1"
   set "SKIP_OLLAMA=1"
   set "SKIP_WHISPER=1"
   set "WITH_SPIKE=0"
@@ -95,9 +97,9 @@ echo     (PyObjC / quickmachotkey install only on macOS via PEP 508 markers; Win
 python -m pip install -r requirements-agent.txt
 if errorlevel 1 exit /b 1
 
-if not "%SKIP_AI_FRAME%"=="1" (
-  echo ==^> Installing ai-frame (settings UI^) dependencies ...
-  python -m pip install -r ai-frame\requirements.txt
+if not "%SKIP_TWIM%"=="1" (
+  echo ==^> Installing twim (settings UI^) dependencies ...
+  python -m pip install -r twim\requirements.txt
   if errorlevel 1 exit /b 1
 )
 
@@ -107,10 +109,10 @@ if "%WITH_SPIKE%"=="1" (
   if errorlevel 1 exit /b 1
 )
 
-if exist "%ROOT%\config\default-ai-frame-settings.json" if not exist "%ROOT%\ai-frame\users\_default\settings.json" (
-  echo ==^> Seeding ai-frame default settings ...
-  if not exist "%ROOT%\ai-frame\users\_default" mkdir "%ROOT%\ai-frame\users\_default"
-  copy /y "%ROOT%\config\default-ai-frame-settings.json" "%ROOT%\ai-frame\users\_default\settings.json" >nul
+if exist "%ROOT%\config\default-twim-settings.json" if not exist "%ROOT%\twim\users\_default\settings.json" (
+  echo ==^> Seeding twim default settings ...
+  if not exist "%ROOT%\twim\users\_default" mkdir "%ROOT%\twim\users\_default"
+  copy /y "%ROOT%\config\default-twim-settings.json" "%ROOT%\twim\users\_default\settings.json" >nul
 )
 
 if not defined VOICE_DICTATION_WHISPER_DEVICE set "VOICE_DICTATION_WHISPER_DEVICE=cpu"

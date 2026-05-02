@@ -62,7 +62,7 @@ async def _notify_hotkey_sidecar_reload(username: str) -> None:
 
 def get_user_store(request: Request) -> UserDataStore:
     """Get the data store for the current user."""
-    session_user = request.cookies.get("aiframe_session")
+    session_user = request.cookies.get("twim_session")
     if session_user:
         data_dir = users.get_user_data_dir(session_user)
         return UserDataStore(data_dir, session_user)

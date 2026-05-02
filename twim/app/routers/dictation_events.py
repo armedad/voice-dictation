@@ -14,9 +14,9 @@ router = APIRouter(tags=["dictation-events"])
 
 @router.get("/dictation/events")
 async def dictation_events(request: Request) -> EventSourceResponse:
-    if not request.cookies.get("aiframe_session"):
+    if not request.cookies.get("twim_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
-    session_user = request.cookies.get("aiframe_session") or ""
+    session_user = request.cookies.get("twim_session") or ""
     if not users.get_user(session_user):
         raise HTTPException(status_code=404, detail="User not found")
 

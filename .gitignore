@@ -11,9 +11,9 @@ __pycache__/
 dist/
 build/
 
-# Local runtime (ai-frame)
-ai-frame/users/
-ai-frame/logs/
+# Local runtime (twim)
+twim/users/
+twim/logs/
 
 # Repo root (e.g. start.sh / ollama logs)
 logs/

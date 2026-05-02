@@ -1,5 +1,5 @@
 /**
- * ai-frame - Main Application Entry Point
+ * twim - Main Application Entry Point
  */
 
 import { debugLog, debugWarn, serverLog } from './debug-flags.js';
@@ -22,7 +22,7 @@ import {
 } from './context-tab.js';
 
 // Log on module load
-serverLog('info', '[APP] ai-frame loaded at ' + new Date().toISOString());
+serverLog('info', '[APP] twim loaded at ' + new Date().toISOString());
 
 // App state
 const state = {
@@ -250,7 +250,7 @@ function setupEventListeners() {
  * Main entry point
  */
 async function main() {
-    debugLog('APP', 'Initializing ai-frame');
+    debugLog('APP', 'Initializing twim');
     
     // Setup UI
     setupEventListeners();
