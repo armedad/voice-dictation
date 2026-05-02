@@ -1,6 +1,6 @@
-# ai-frame
+# twim
 
-A minimal, extensible skeleton framework for building LLM-powered web applications.
+Voice dictation settings web app (FastAPI + static JS): models, preferences, and dictation context.
 
 ## Features
 
@@ -38,7 +38,7 @@ A minimal, extensible skeleton framework for building LLM-powered web applicatio
 ## Project Structure
 
 ```
-ai-frame/
+twim/
 ├── app/
 │   ├── main.py              # FastAPI app entry
 │   ├── routers/             # API endpoints
@@ -79,7 +79,7 @@ Enable/disable logging for specific features in Settings > Debug.
 
 Logs are:
 - Printed to server console with `[CLIENT]` prefix
-- Written to `logs/aiframe_YYYYMMDD.log`
+- Written to `logs/twim_YYYYMMDD.log`
 
 ## API Endpoints
 

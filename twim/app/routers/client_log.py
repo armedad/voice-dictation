@@ -25,7 +25,7 @@ def write_to_log_file(level: str, message: str, data: Optional[dict] = None):
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     
     today = datetime.now().strftime("%Y%m%d")
-    log_file = LOGS_DIR / f"aiframe_{today}.log"
+    log_file = LOGS_DIR / f"twim_{today}.log"
     
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     data_str = f" | {data}" if data else ""

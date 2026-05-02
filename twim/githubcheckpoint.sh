@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# Sync ai-frame project to git repo and commit changes
+# Sync twim (voice-dictation UI) to git repo and commit changes
 
 if [ -z "$1" ]; then
     echo "Usage: $0 <commit message>"
     exit 1
 fi
 
-SOURCE_DIR="/Users/chee/zapier ai project/coding/ai-frame"
-GIT_REPO="/Volumes/apps/git/ai-frame"
+SOURCE_DIR="/Users/chee/zapier ai project/coding/voice-dictation-mvp/twim"
+GIT_REPO="/Volumes/apps/git/twim"
 
 # Sync files from source to git repo (excluding .git and user data)
 rsync -av --delete \

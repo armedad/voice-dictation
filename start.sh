@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launch the Voice Dictation MVP settings web app (ai-frame / FastAPI).
+# Launch the Voice Dictation MVP settings web app (twim / FastAPI).
 #
 # Usage:
 #   ./start.sh                      # bind 127.0.0.1:8000, --reload; ensure Ollama is up
@@ -112,7 +112,7 @@ echo ""
 echo "  Open the settings / chat UI in your browser:"
 echo "    http://127.0.0.1:${PORT}/"
 echo ""
-echo "  First visit: create a local account in the UI (ai-frame stores data under users/)."
+echo "  First visit: create a local account in the UI (twim stores data under users/)."
 echo ""
 echo "  In the UI (logged in): header button \"Dictate 10s\" records 10s, then types"
 echo "  cleaned text into whichever app/field has keyboard focus (macOS; Accessibility)."
@@ -178,7 +178,7 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
     "$VENV_PY" "$ROOT/run_combined_app.py" "${COMBINED_ARGS[@]}"
 fi
 
-cd "$ROOT/ai-frame"
+cd "$ROOT/twim"
 exec env \
   VOICE_DICTATION_PORT="$PORT" \
   "$VENV_PY" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" "${RELOAD_ARGS[@]}"

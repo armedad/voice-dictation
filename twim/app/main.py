@@ -1,4 +1,4 @@
-"""FastAPI application for ai-frame - LLM App Skeleton Framework."""
+"""FastAPI application for twim (voice dictation settings + API)."""
 from __future__ import annotations
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
@@ -8,7 +8,7 @@ from datetime import datetime
 import sys
 import time
 
-# Voice dictation MVP package root (parent of ai-frame): core/, platform_mac/, etc.
+# Voice dictation MVP package root (parent of twim): core/, platform_mac/, etc.
 # Must run before routers that import `core` (dictation, speech-models, …).
 VOICE_DICTATION_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(VOICE_DICTATION_ROOT) not in sys.path:
@@ -28,7 +28,7 @@ def print_startup_banner():
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     banner = f"""
 ================================================================================
-  AI-FRAME - LLM App Skeleton Framework
+  twim — voice dictation settings + API
   Time: {timestamp}
   Port: 8000
   URL:  http://localhost:8000
@@ -46,8 +46,8 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 print_startup_banner()
 
 app = FastAPI(
-    title="ai-frame",
-    description="LLM App Skeleton Framework",
+    title="twim",
+    description="Voice dictation settings and cleanup API",
     version="0.1.0"
 )
 

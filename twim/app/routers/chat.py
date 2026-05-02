@@ -15,7 +15,7 @@ router = APIRouter(tags=["chat"])
 
 def get_user_store(request: Request) -> UserDataStore:
     """Get the data store for the current user."""
-    session_user = request.cookies.get("aiframe_session")
+    session_user = request.cookies.get("twim_session")
     if session_user:
         data_dir = users.get_user_data_dir(session_user)
         return UserDataStore(data_dir, session_user)
@@ -24,7 +24,7 @@ def get_user_store(request: Request) -> UserDataStore:
 
 def get_user_data_dir(request: Request) -> Path:
     """Get the data directory for the current user."""
-    session_user = request.cookies.get("aiframe_session")
+    session_user = request.cookies.get("twim_session")
     if session_user:
         return users.get_user_data_dir(session_user)
     return DEFAULT_DATA_DIR

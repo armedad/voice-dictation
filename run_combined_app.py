@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Single-process launcher for Voice Dictation MVP (ai-frame + optional global hotkeys).
+"""Single-process launcher for Voice Dictation MVP (twim + optional global hotkeys).
 
 Modes:
   Default (macOS / Windows): main thread = hotkey runtime; background thread = uvicorn (no reload).
@@ -54,17 +54,17 @@ def main() -> None:
         sys.exit(2)
 
     repo_root = Path(__file__).resolve().parent
-    ai_frame = repo_root / "ai-frame"
-    os.chdir(ai_frame)
-    ai_frame_s = str(ai_frame)
-    if ai_frame_s not in sys.path:
-        sys.path.insert(0, ai_frame_s)
+    twim_app = repo_root / "twim"
+    os.chdir(twim_app)
+    twim_app_s = str(twim_app)
+    if twim_app_s not in sys.path:
+        sys.path.insert(0, twim_app_s)
 
     # #region agent log
     _debug_emit(
         hypothesis_id="H1",
         location="run_combined_app.py:main",
-        message="cwd and sys.path head after ai-frame setup",
+        message="cwd and sys.path head after twim setup",
         data={"cwd": os.getcwd(), "path0": sys.path[0] if sys.path else None},
     )
     # #endregion

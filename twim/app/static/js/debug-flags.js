@@ -19,7 +19,7 @@ const FLAG_DEFINITIONS = {
     SPEECH: { default: false, desc: 'Speech model discovery' },
 };
 
-const STORAGE_KEY = 'aiframe_debug_flags';
+const STORAGE_KEY = 'twim_debug_flags';
 const FLUSH_DELAY_MS = 100;
 const SERVER_ENDPOINT = '/api/log';
 

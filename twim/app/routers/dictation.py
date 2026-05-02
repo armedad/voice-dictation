@@ -43,7 +43,7 @@ router = APIRouter(tags=["dictation"])
 RECORD_SECONDS = 10.0
 _DICTATION_CONSOLE_INTERVAL_SEC = 3.0
 
-# Repo root (parent of ai-frame/): same layout as app.main.VOICE_DICTATION_ROOT
+# Repo root (parent of twim/): same layout as app.main.VOICE_DICTATION_ROOT
 _VOICE_DICTATION_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _HOTKEY_AGENT_HEARTBEAT = _VOICE_DICTATION_ROOT / "logs" / "hotkey_agent_heartbeat.json"
 # Fallback when loopback ping to the sidecar fails (older agent or bind error).
@@ -135,7 +135,7 @@ def _require_loopback(request: Request) -> None:
 
 
 def _dictation_server_log(message: str, data: dict[str, Any] | None = None) -> None:
-    """Append to unified daily ai-frame log."""
+    """Append to unified daily twim log."""
     log_system(level="INFO", message=message, data=data)
 
 
@@ -263,7 +263,7 @@ def _dictation_cleanup_gate_trace(
 def _dictation_cleanup_debug_logger(
     store: UserDataStore, source: str
 ) -> Callable[[dict[str, Any]], None]:
-    """Writes one structured line per dictation run to the daily ai-frame log (see client_log)."""
+    """Writes one structured line per dictation run to the daily twim log (see client_log)."""
 
     def _emit(payload: dict[str, Any]) -> None:
         _dictation_server_log(
@@ -414,7 +414,7 @@ async def _execute_dictation_from_text(
 @router.get("/dictation/prompt-defaults")
 async def dictation_prompt_defaults(request: Request) -> dict[str, str]:
     """Built-in dictation cleanup prompts (Context tab restore / defaults)."""
-    if not request.cookies.get("aiframe_session"):
+    if not request.cookies.get("twim_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
     from core.models import (
         DEFAULT_CLEANUP_SYSTEM_PROMPT,
@@ -454,7 +454,7 @@ def _resolve_sounddevice_input_index(settings: Settings) -> int | None:
 @router.get("/dictation/audio-input")
 async def dictation_audio_input(request: Request) -> dict[str, Any]:
     """Enumerate input microphones + current system default (Preferences Voice input)."""
-    if not request.cookies.get("aiframe_session"):
+    if not request.cookies.get("twim_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
 
     from core.portaudio_devices import list_input_devices
@@ -542,7 +542,7 @@ async def dictation_last_context(
     ),
 ) -> dict[str, Any]:
     """Dictation LLM snapshot(s) for the Context tab; optional index browses history."""
-    if not request.cookies.get("aiframe_session"):
+    if not request.cookies.get("twim_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
     store = get_user_store(request)
     entries = store.load_dictation_history_entries()
@@ -835,7 +835,7 @@ async def record_and_type(request: Request) -> dict[str, Any]:
     Requires login cookie. Records fixed duration from default mic, runs voice pipeline,
     then types the result at the current keyboard focus (any app). macOS / Windows.
     """
-    if not request.cookies.get("aiframe_session"):
+    if not request.cookies.get("twim_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
 
     store = get_user_store(request)
@@ -871,7 +871,7 @@ async def record_and_type(request: Request) -> dict[str, Any]:
 @router.post("/dictation/cleanup-text")
 async def dictation_cleanup_text(request: Request, body: DictationTextBody) -> dict[str, Any]:
     """Run dictation cleanup using provided text instead of mic capture."""
-    if not request.cookies.get("aiframe_session"):
+    if not request.cookies.get("twim_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
     store = get_user_store(request)
     if _dictation_active:
@@ -892,7 +892,7 @@ async def dictation_hotkey_agent_status(request: Request) -> dict[str, Any]:
     Prefer a **loopback HTTP GET** to the sidecar ``/health`` (responds only while the
     process runs). Falls back to ``logs/hotkey_agent_heartbeat.json`` for older agents.
     """
-    if not request.cookies.get("aiframe_session"):
+    if not request.cookies.get("twim_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
 
     store = get_user_store(request)
@@ -992,7 +992,7 @@ async def dictation_hotkey_cancel(request: Request) -> dict[str, Any]:
             "stop_event_after": _dictation_stop.is_set(),
         },
     )
-    session_user = request.cookies.get("aiframe_session") or ""
+    session_user = request.cookies.get("twim_session") or ""
     if session_user:
         publish_event(session_user, "dictation_cancel_signal", {})
     return {"ok": True}

@@ -243,7 +243,7 @@ export function initContextTab() {
         refreshDictationLastContext({ resetToLatest: false }).catch((e) => debugError('CONTEXT', e));
     });
 
-    window.addEventListener('aiframe-settings-saved', () => {
+    window.addEventListener('twim-settings-saved', () => {
         syncContextTabFromSettings().catch(() => {});
     });
 }

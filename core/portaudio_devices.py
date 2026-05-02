@@ -1,4 +1,4 @@
-"""PortAudio input device enumeration via sounddevice (ai-frame dictation + validation)."""
+"""PortAudio input device enumeration via sounddevice (twim dictation + validation)."""
 from __future__ import annotations
 
 from typing import Any
