@@ -126,7 +126,6 @@ fi
 if [[ "$(uname -s)" == "Darwin" ]]; then
   exec env \
     VOICE_DICTATION_PORT="$PORT" \
-    VOICE_DICTATION_USE_QUICKMACHOTKEY="${VOICE_DICTATION_USE_QUICKMACHOTKEY:-}" \
     "$VENV_PY" "$ROOT/run_combined_app.py" "${COMBINED_ARGS[@]}"
 fi
 

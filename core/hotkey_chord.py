@@ -1,6 +1,6 @@
 """Cross-platform dictation hotkey chord: JSON shape, validation, display labels.
 
-OS-specific bindings (Carbon, pynput, etc.) live under platform_*; this module stays framework-free.
+OS-specific bindings (quickmachotkey, pynput, etc.) live under platform_*; this module stays framework-free.
 """
 from __future__ import annotations
 

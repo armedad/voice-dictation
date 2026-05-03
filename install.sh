@@ -102,7 +102,7 @@ source .venv/bin/activate
 python -m pip install -U pip wheel setuptools
 
 echo "==> Installing agent dependencies (requirements-agent.txt) ..."
-echo "    (includes PyObjC for macOS Carbon global hotkeys; mic/STT/httpx/pynput per that file)"
+echo "    (includes PyObjC + quickmachotkey for macOS global hotkeys; mic/STT/httpx/pynput per that file)"
 python -m pip install -r requirements-agent.txt
 if ! python -c 'import importlib; raise SystemExit(0 if importlib.util.find_spec("quickmachotkey") else 1)' >/dev/null 2>&1; then
   echo "==> Installing quickmachotkey (missing from environment) ..."
