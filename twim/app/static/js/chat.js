@@ -8,6 +8,10 @@ import { debugLog, debugError } from './debug-flags.js';
 let currentConversationId = null;
 let isGenerating = false;
 
+const CHAT_DOCK_HEIGHT_KEY = 'twim_chat_input_dock_height';
+const CHAT_DOCK_DEFAULT_PX = 112;
+const CHAT_DOCK_MIN_PX = 72;
+
 /**
  * Get or create current conversation
  */
@@ -171,6 +175,88 @@ function parseModelValue(value) {
     return { provider: provider || null, model: model || null };
 }
 
+function clampChatDockHeightPx(h) {
+    const cap = Math.min(Math.floor(window.innerHeight * 0.7), 560);
+    return Math.max(CHAT_DOCK_MIN_PX, Math.min(cap, Math.round(h)));
+}
+
+function initChatInputDockResize() {
+    const dock = document.getElementById('chat-input-dock');
+    const resizer = document.getElementById('chat-input-resizer');
+    if (!dock || !resizer) return;
+
+    let h = CHAT_DOCK_DEFAULT_PX;
+    try {
+        const raw = localStorage.getItem(CHAT_DOCK_HEIGHT_KEY);
+        if (raw) {
+            const n = parseInt(raw, 10);
+            if (!Number.isNaN(n)) h = clampChatDockHeightPx(n);
+        }
+    } catch (_e) {
+        /* ignore */
+    }
+    dock.style.setProperty('--chat-input-dock-height', `${h}px`);
+
+    let dragging = false;
+    let startY = 0;
+    let startH = 0;
+
+    resizer.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        dragging = true;
+        startY = e.clientY;
+        startH = dock.getBoundingClientRect().height;
+        resizer.setPointerCapture(e.pointerId);
+        resizer.classList.add('is-dragging');
+    });
+
+    resizer.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        /* Handle is on top of dock: drag up → taller dock, drag down → shorter */
+        const delta = e.clientY - startY;
+        const next = clampChatDockHeightPx(startH - delta);
+        dock.style.setProperty('--chat-input-dock-height', `${next}px`);
+    });
+
+    const endDrag = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        resizer.classList.remove('is-dragging');
+        try {
+            resizer.releasePointerCapture(e.pointerId);
+        } catch (_err) {
+            /* not capturing */
+        }
+        const rect = dock.getBoundingClientRect();
+        try {
+            localStorage.setItem(CHAT_DOCK_HEIGHT_KEY, String(Math.round(rect.height)));
+        } catch (_e) {
+            /* ignore */
+        }
+    };
+
+    resizer.addEventListener('pointerup', endDrag);
+    resizer.addEventListener('pointercancel', endDrag);
+
+    resizer.addEventListener('dblclick', () => {
+        dock.style.setProperty('--chat-input-dock-height', `${CHAT_DOCK_DEFAULT_PX}px`);
+        try {
+            localStorage.setItem(CHAT_DOCK_HEIGHT_KEY, String(CHAT_DOCK_DEFAULT_PX));
+        } catch (_e) {
+            /* ignore */
+        }
+    });
+
+    window.addEventListener('resize', () => {
+        const cur = dock.getBoundingClientRect().height;
+        const c = clampChatDockHeightPx(cur);
+        if (c !== cur) {
+            dock.style.setProperty('--chat-input-dock-height', `${c}px`);
+        }
+    });
+}
+
 /**
  * Initialize chat event listeners
  */
@@ -197,4 +283,6 @@ export function initChat() {
             }
         });
     }
+
+    initChatInputDockResize();
 }
