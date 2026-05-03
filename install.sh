@@ -155,7 +155,7 @@ fi
 echo ""
 echo "==> Done."
 echo "    Activate:  source .venv/bin/activate"
-echo "    Agent:     python run_agent.py record-once --seconds 4 --no-type"
+echo "    Pipeline CLI: python dictation_cli.py record-once --seconds 4 --no-type"
 echo "    Settings:  ./start.sh  → http://127.0.0.1:8000/ (see banner printed by start.sh)"
 echo "    Config:    ~/.voice-dictation/config.json (created on first agent run if missing)"
 echo "    Windows:   install.bat (same flags; shared scripts/install_post_pip.py)"

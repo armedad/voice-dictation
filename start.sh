@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
-# Launch the Voice Dictation MVP settings web app (twim / FastAPI).
+# Launch twim (FastAPI + static UI): always via run_combined_app.py.
 #
 # Usage:
-#   ./start.sh                      # bind 127.0.0.1:8000, --reload; ensure Ollama is up
-#   ./start.sh --port 8765          # override port (or env VOICE_DICTATION_PORT)
-#   ./start.sh --no-reload
-#   ./start.sh --skip-ollama-ensure  # do not check/start Ollama
-#   ./start.sh --skip-hotkey-agent   # API only on main thread (no global hotkeys; --reload ok)
+#   ./start.sh                      # macOS: uvicorn + hotkeys; else: API + --reload
+#   ./start.sh --port 8765          # or env VOICE_DICTATION_PORT
+#   ./start.sh --no-reload          # (non-macOS only; macOS ignores reload when hotkeys on)
+#   ./start.sh --skip-ollama-ensure
+#   ./start.sh --skip-hotkey-agent  # API on main thread; --reload allowed (all OSes)
 #   ./start.sh --help
 #
 # Ollama: if http://127.0.0.1:11434/api/tags is unreachable and `ollama` is on PATH,
-# runs `ollama serve` in the background (logs: logs/ollama-serve.log). Override host/port
-# with OLLAMA_HOST / OLLAMA_PORT when matching your settings UI URL.
+# runs `ollama serve` in the background (logs: logs/ollama-serve.log).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,7 +41,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      sed -n '1,30p' "$0"
+      sed -n '1,25p' "$0"
       exit 0
       ;;
     *)
@@ -75,7 +74,6 @@ ensure_ollama() {
 
   echo "==> Ollama not reachable at ${base} — starting in background: ollama serve"
   echo "    (log file: $ROOT/logs/ollama-serve.log)"
-  # Pass through OLLAMA_* if already set in the environment; otherwise bind defaults via host/port.
   env OLLAMA_HOST="${OLLAMA_HOST:-$host}" OLLAMA_PORT="${OLLAMA_PORT:-$port}" \
     nohup ollama serve >>"$ROOT/logs/ollama-serve.log" 2>&1 &
 
@@ -88,7 +86,7 @@ ensure_ollama() {
     sleep 1
     i=$((i + 1))
   done
-  echo "warning: Ollama still not responding at ${base} after 30s — see $ROOT/logs/ollama-serve.log (port in use or daemon failed)." >&2
+  echo "warning: Ollama still not responding at ${base} after 30s — see $ROOT/logs/ollama-serve.log" >&2
 }
 
 VENV_PY="$ROOT/.venv/bin/python"
@@ -102,62 +100,10 @@ if [[ "$SKIP_OLLAMA_ENSURE" != true ]]; then
 fi
 
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Voice Dictation MVP — settings + dictation API (single Python process on macOS)"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "==> Voice dictation MVP (twim)  http://127.0.0.1:${PORT}/"
+echo "    Entry: run_combined_app.py  |  venv: source \"$ROOT/.venv/bin/activate\""
+echo "    Pipeline CLI: python dictation_cli.py record-once --seconds 4 --no-type"
 echo ""
-echo "  Activate this venv in another terminal (for run_agent.py / pip):"
-echo "    source \"$ROOT/.venv/bin/activate\""
-echo ""
-echo "  Open the settings / chat UI in your browser:"
-echo "    http://127.0.0.1:${PORT}/"
-echo ""
-echo "  First visit: create a local account in the UI (twim stores data under users/)."
-echo ""
-echo "  In the UI (logged in): header button \"Dictate 10s\" records 10s, then types"
-echo "  cleaned text into whichever app/field has keyboard focus (macOS; Accessibility)."
-echo "  CLI alternative: source .venv/bin/activate && python run_agent.py record-once …"
-echo ""
-echo "  Local (Ollama): Settings → Models → URL should match http://127.0.0.1:11434 (use Default)."
-echo "  Ollama logs (if started by this script): $ROOT/logs/ollama-serve.log"
-echo ""
-echo "  Mic capture needs PortAudio on macOS (install.sh installs via brew when possible)."
-echo ""
-echo "  macOS: always run_combined_app.py (uvicorn + hotkeys in one process, or API-only with"
-echo "    --skip-hotkey-agent). Logs: logs/hotkey-agent.log when hotkeys are enabled."
-echo ""
-echo "  Press Ctrl+C in this terminal to stop the FastAPI server (background Ollama keeps running)."
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-
-stop_hotkey_agent_for_repo() {
-  local pid_file="$ROOT/logs/hotkey-agent.pid"
-  if [[ -f "$pid_file" ]]; then
-    local old_pid
-    old_pid="$(tr -d ' \n\r' <"$pid_file" || true)"
-    if [[ -n "$old_pid" ]] && kill -0 "$old_pid" 2>/dev/null; then
-      echo "==> Stopping previous hotkey agent (PID $old_pid)"
-      kill -TERM "$old_pid" 2>/dev/null || true
-      sleep 0.5
-      kill -KILL "$old_pid" 2>/dev/null || true
-    fi
-    rm -f "$pid_file"
-  fi
-  # Catch orphans (e.g. after Ctrl+C on uvicorn) that still run this repo's script path.
-  if pkill -TERM -f "${ROOT}/run_hotkey_agent.py" 2>/dev/null; then
-    echo "==> Stopped stray run_hotkey_agent.py process(es) for this repo"
-    sleep 0.3
-  fi
-}
-
-if [[ "$(uname -s)" == "Darwin" ]]; then
-  mkdir -p "$ROOT/logs"
-  # Always stop legacy sidecar process from older builds.
-  stop_hotkey_agent_for_repo
-  if [[ "$SKIP_HOTKEY_AGENT" == true ]]; then
-    echo "==> Embedded hotkey runtime disabled (--skip-hotkey-agent)."
-  fi
-fi
 
 COMBINED_ARGS=(--port "$PORT")
 if [[ "$SKIP_HOTKEY_AGENT" == true ]]; then
@@ -167,7 +113,13 @@ if [[ "$SKIP_HOTKEY_AGENT" == true ]]; then
   fi
 elif [[ "$(uname -s)" == "Darwin" ]]; then
   if [[ ${#RELOAD_ARGS[@]} -gt 0 ]]; then
-    echo "warning: --reload disabled when global hotkeys are enabled (main-thread runtime)." >&2
+    echo "warning: --reload ignored on macOS with hotkeys (use --skip-hotkey-agent for reload)." >&2
+  fi
+else
+  # Linux / Git Bash, etc.: embedded hotkeys unsupported → API-only + reload
+  COMBINED_ARGS+=(--skip-hotkey-agent)
+  if [[ ${#RELOAD_ARGS[@]} -gt 0 ]]; then
+    COMBINED_ARGS+=(--reload)
   fi
 fi
 
@@ -178,7 +130,6 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
     "$VENV_PY" "$ROOT/run_combined_app.py" "${COMBINED_ARGS[@]}"
 fi
 
-cd "$ROOT/twim"
 exec env \
   VOICE_DICTATION_PORT="$PORT" \
-  "$VENV_PY" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" "${RELOAD_ARGS[@]}"
+  "$VENV_PY" "$ROOT/run_combined_app.py" "${COMBINED_ARGS[@]}"

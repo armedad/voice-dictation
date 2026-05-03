@@ -26,4 +26,3 @@ kill_by_pattern() {
 
 kill_by_pattern "run_combined_app.py"
 kill_by_pattern "uvicorn app.main:app"
-kill_by_pattern "run_hotkey_agent.py"

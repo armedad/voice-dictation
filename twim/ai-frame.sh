@@ -1,3 +1,3 @@
 #!/bin/bash
-cd "$(dirname "$0")"
-python3 run.py
+cd "$(dirname "$0")/.."
+exec ./start.sh --skip-hotkey-agent

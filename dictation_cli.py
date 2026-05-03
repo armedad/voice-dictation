@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Dictation agent dev CLI.
+Dictation pipeline dev CLI (no web server).
 
 Run from `coding/voice-dictation-mvp/` after:
   python3 -m venv .venv && source .venv/bin/activate

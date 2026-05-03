@@ -143,7 +143,7 @@ if not "%SKIP_OLLAMA%"=="1" (
 echo.
 echo ==^> Done.
 echo     Activate:  .venv\Scripts\activate.bat
-echo     Agent:     python run_agent.py record-once --seconds 4 --no-type
+echo     Pipeline CLI: python dictation_cli.py record-once --seconds 4 --no-type
 echo     Settings:  start.bat from repo root ^(or run_combined_app.py / uvicorn per README^)
 echo     Config:    %USERPROFILE%\.voice-dictation\config.json ^(created on first agent run if missing^)
 echo     Note: global hotkey hooks ^(pynput^) may require AV exclusions if binds fail.

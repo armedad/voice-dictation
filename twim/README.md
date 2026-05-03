@@ -18,10 +18,11 @@ Voice dictation settings web app (FastAPI + static JS): models, preferences, and
    pip install -r requirements.txt
    ```
 
-2. **Run the server:**
+2. **Run the server** (from repo root `voice-dictation-mvp/`):
    ```bash
-   python run.py
+   ./start.sh
    ```
+   API-only / reload: `./start.sh --skip-hotkey-agent`
 
 3. **Open in browser:**
    ```
@@ -60,8 +61,7 @@ twim/
 │       └── js/
 ├── users/                   # Per-user data (gitignored)
 ├── logs/                    # Server logs (gitignored)
-├── requirements.txt
-└── run.py
+└── requirements.txt
 ```
 
 ## Configuration
