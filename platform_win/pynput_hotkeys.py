@@ -77,7 +77,7 @@ def chord_to_pynput_combo(chord: dict[str, Any]) -> str:
 
 
 class PynputHotkeyController:
-    """Register global hotkeys; call ``pump_events`` from main loop for reload checks."""
+    """Register global hotkeys; reload via ``set_hotkeys`` (e.g. from loopback POST /hotkeys/reload)."""
 
     def __init__(self) -> None:
         self._listener: keyboard.GlobalHotKeys | None = None
@@ -141,6 +141,8 @@ class PynputHotkeyController:
         time.sleep(max(0.0, float(timeout_sec)))
 
     def run_event_loop(self) -> None:
-        """Block until listener exits (normally never)."""
+        """Block until listener exits, or wait forever when no listener (stay alive for reload)."""
         if self._listener is not None:
             self._listener.join()
+        else:
+            threading.Event().wait()
