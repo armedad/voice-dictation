@@ -4,7 +4,7 @@ pydantic>=2.6.0
 numpy>=1.26.0
 sounddevice>=0.5.1
 pynput>=1.7.7
-# macOS only: Carbon / Cocoa hotkey sidecar + quickmachotkey (when enabled); typing still uses pynput
+# macOS only: PyObjC / quickmachotkey hotkey path; typing still uses pynput
 pyobjc-framework-Cocoa>=11.0; sys_platform == "darwin"
 quickmachotkey>=2025.7.28; sys_platform == "darwin"
 # Local speech-to-text (default transcription provider); first run downloads weights

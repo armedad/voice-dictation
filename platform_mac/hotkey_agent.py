@@ -1,5 +1,5 @@
 """
-macOS global dictation hotkeys: Carbon ``RegisterEventHotKey`` + httpx to local FastAPI.
+macOS global dictation hotkeys: quickmachotkey + AppKit event loop + httpx to local FastAPI.
 
 Uses system hotkey registration (narrow scope) instead of a global key tap, so macOS
 typically does **not** require Input Monitoring for this sidecar.
@@ -184,12 +184,7 @@ def main() -> None:
     )
     # endregion
 
-    quick_flag = os.environ.get("VOICE_DICTATION_USE_QUICKMACHOTKEY", "").strip().lower()
-    use_quick = quick_flag not in {"0", "false", "no"}
-    if use_quick:
-        from platform_mac.quickmachotkey_hotkeys import QuickMachHotkeyController
-    else:
-        from platform_mac.carbon_hotkeys import CarbonHotkeyController
+    from platform_mac.quickmachotkey_hotkeys import QuickMachHotkeyController
 
     port = int(os.environ.get("VOICE_DICTATION_PORT", "8000"))
     username = _resolve_username()
@@ -407,7 +402,7 @@ def main() -> None:
     settings_path = _users_dir() / username / "settings.json"
     secret_path = _users_dir() / username / "hotkey_local_secret.txt"
     _LOG.info(
-        "Voice dictation hotkey agent (user=%r, port=%s, base=%s, backend=Carbon)",
+        "Voice dictation hotkey agent (user=%r, port=%s, base=%s, backend=QuickMachHotkey)",
         username,
         port,
         base_url,
@@ -424,20 +419,17 @@ def main() -> None:
     _LOG.info("Using settings: %s", settings_path)
     _LOG.info("Secret file: %s (exists=%s)", secret_path, secret_path.exists())
 
-    if use_quick:
-        carbon = QuickMachHotkeyController()
-    else:
-        carbon = CarbonHotkeyController()
+    hotkey_ctrl = QuickMachHotkeyController()
     try:
-        carbon.initialize()
+        hotkey_ctrl.initialize()
     except Exception:
-        _LOG.exception("Carbon hotkey controller failed to initialize")
+        _LOG.exception("QuickMach hotkey controller failed to initialize")
         # region agent log
         _debug_emit(
             run_id=run_id,
             hypothesis_id="H1",
             location="platform_mac/hotkey_agent.py:main:init-failed",
-            message="carbon initialize failed",
+            message="quickmach initialize failed",
             data={"pid": os.getpid()},
         )
         # endregion
@@ -447,8 +439,6 @@ def main() -> None:
 
     def _noop() -> None:
         return None
-
-    loop_counter = 0
 
     def _apply_hotkeys_once() -> None:
         toggle_c, cancel_c, secret, mtime = _load_user_chords_and_secret(username)
@@ -470,20 +460,19 @@ def main() -> None:
         # endregion
         if can_bind:
             _LOG.info(
-                "Applying %s global hotkeys (toggle=%s cancel=%s)",
-                "QuickMachHotkey" if use_quick else "Carbon",
+                "Applying QuickMach global hotkeys (toggle=%s cancel=%s)",
                 toggle_c is not None,
                 cancel_c is not None,
             )
-            carbon.set_hotkeys(
+            hotkey_ctrl.set_hotkeys(
                 toggle_chord=toggle_c,
                 cancel_chord=cancel_c,
                 on_toggle=_fire_toggle,
                 on_cancel=_fire_cancel,
             )
         else:
-            _LOG.info("Clearing %s hotkeys (missing secret or no chords configured)", "QuickMachHotkey" if use_quick else "Carbon")
-            carbon.set_hotkeys(
+            _LOG.info("Clearing QuickMach hotkeys (missing secret or no chords configured)")
+            hotkey_ctrl.set_hotkeys(
                 toggle_chord=None,
                 cancel_chord=None,
                 on_toggle=_noop,
@@ -494,66 +483,40 @@ def main() -> None:
     # Apply current settings once at startup; further updates are signal-driven.
     last_applied_mtime = _apply_hotkeys_once()
 
-    if use_quick:
-        from PyObjCTools import AppHelper as _AppHelper
+    from PyObjCTools import AppHelper as _AppHelper
 
-        _quick_poll_sec = 0.05
-        _LOG.info(
-            "QuickMachHotkey mode: signal-driven reload (POST /hotkeys/reload only)."
-        )
-        # region agent log
-        _debug_emit(
-            run_id=run_id,
-            hypothesis_id="H1",
-            location="platform_mac/hotkey_agent.py:main:quickmachotkey",
-            message="quickmachotkey enabled",
-            data={"env_value": quick_flag},
-        )
-        # endregion
+    _quick_poll_sec = 0.05
+    _LOG.info(
+        "QuickMachHotkey mode: loopback reload (POST /hotkeys/reload) polled on main run loop."
+    )
+    # region agent log
+    _debug_emit(
+        run_id=run_id,
+        hypothesis_id="H1",
+        location="platform_mac/hotkey_agent.py:main:quickmachotkey",
+        message="quickmachotkey enabled",
+        data={},
+    )
+    # endregion
 
-        def _quick_poll_tick() -> None:
-            nonlocal last_applied_mtime
-            if reload_requested.is_set():
-                reload_requested.clear()
-                last_applied_mtime = _apply_hotkeys_once()
-            _AppHelper.callLater(_quick_poll_sec, _quick_poll_tick)
-
-        # region agent log
-        _debug_emit(
-            run_id=run_id,
-            hypothesis_id="H1",
-            location="platform_mac/hotkey_agent.py:main:quickmachotkey",
-            message="entering AppHelper.runEventLoop",
-            data={},
-        )
-        # endregion
-        _AppHelper.callAfter(_quick_poll_tick)
-        carbon.run_event_loop()
-        return
-
-    while True:
-        # Pump Carbon events on this thread (embedded runtime runs in its own thread).
-        carbon.pump_events(0.05)
-        loop_counter += 1
-        if loop_counter % 40 == 0:
-            # region agent log
-            _debug_emit(
-                run_id=run_id,
-                hypothesis_id="H1",
-                location="platform_mac/hotkey_agent.py:main:loop",
-                message="loop heartbeat",
-                data={
-                    "loop_counter": loop_counter,
-                    "thread": threading.current_thread().name,
-                    "reload_requested": reload_requested.is_set(),
-                    "last_applied_mtime": last_applied_mtime,
-                },
-            )
-            # endregion
+    def _quick_poll_tick() -> None:
+        nonlocal last_applied_mtime
         if reload_requested.is_set():
             reload_requested.clear()
-            mtime = _apply_hotkeys_once()
-            last_applied_mtime = mtime
+            last_applied_mtime = _apply_hotkeys_once()
+        _AppHelper.callLater(_quick_poll_sec, _quick_poll_tick)
+
+    # region agent log
+    _debug_emit(
+        run_id=run_id,
+        hypothesis_id="H1",
+        location="platform_mac/hotkey_agent.py:main:quickmachotkey",
+        message="entering AppHelper.runEventLoop",
+        data={},
+    )
+    # endregion
+    _AppHelper.callAfter(_quick_poll_tick)
+    hotkey_ctrl.run_event_loop()
 
 
 if __name__ == "__main__":

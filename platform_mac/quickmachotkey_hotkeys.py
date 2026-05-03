@@ -17,7 +17,7 @@ from quickmachotkey.constants import cmdKey, controlKey, optionKey, shiftKey  # 
 
 from core.hotkey_chord import parse_chord_or_raise
 from core.debug_flags_logging import log_debug
-from platform_mac.carbon_hotkeys import chord_to_carbon_vk_and_modifiers
+from platform_mac.chord_vk import chord_to_carbon_vk_and_modifiers
 
 def _debug_emit(location: str, message: str, data: dict[str, Any]) -> None:
     log_debug(

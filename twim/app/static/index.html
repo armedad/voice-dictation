@@ -262,10 +262,10 @@
                         <h3 class="settings-section-title">Global dictation hotkeys</h3>
                         <p class="setting-hint">
                             macOS: global hotkeys are handled by an embedded runtime in this app process when started via
-                            <code>./start.sh</code>. Hotkeys use Carbon <code>RegisterEventHotKey</code> (not a global key tap), so
+                            <code>./start.sh</code>. Hotkeys use <strong>quickmachotkey</strong> plus system registration (not a global key tap), so
                             <strong>Input Monitoring</strong> is usually not required for hotkeys. Accessibility may still be needed for
                             <em>typing</em> the transcript into other apps. If a chord never fires, check <code>logs/hotkey-agent.log</code>
-                            for <code>RegisterEventHotKey</code> errors or conflicts with another app using the same shortcut.
+                            for registration errors or conflicts with another app using the same shortcut.
                         </p>
                         <input
                             type="text"
