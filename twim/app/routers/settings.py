@@ -44,8 +44,7 @@ def _sync_hotkey_agent_target_user(store: UserDataStore, patch: dict[str, Any]) 
 
 async def _notify_hotkey_sidecar_reload(username: str) -> None:
     """
-    Best-effort loopback notify so macOS hotkey sidecar can rebind immediately.
-    Falls back to file polling when sidecar is unreachable.
+    Best-effort loopback POST so the hotkey sidecar can rebind immediately (no file polling).
     """
     if not username:
         return
@@ -58,7 +57,7 @@ async def _notify_hotkey_sidecar_reload(username: str) -> None:
         async with httpx.AsyncClient(timeout=0.35) as client:
             await client.post(url, json={"username": username})
     except Exception:
-        # Sidecar may be down; periodic file polling in the agent remains as fallback.
+        # Sidecar may be down; user can restart the agent or save hotkeys again.
         return
 
 

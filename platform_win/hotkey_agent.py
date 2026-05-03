@@ -28,6 +28,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from core.hotkey_chord import normalize_chord
+from hotkey_rebind_schedule import schedule_hotkey_rebind_from_http_thread
 
 _LOG = logging.getLogger("hotkey_agent")
 
@@ -127,9 +128,6 @@ def main() -> None:
     toggle_url = f"{base_url}/api/dictation/hotkey/toggle"
     cancel_url = f"{base_url}/api/dictation/hotkey/cancel"
 
-    reload_requested = threading.Event()
-    last_applied_mtime: float | None = None
-
     def _start_ping_server() -> None:
         try:
             ping_port = int(
@@ -183,7 +181,7 @@ def main() -> None:
                     self.end_headers()
                     self.wfile.write(body)
                     return
-                reload_requested.set()
+                schedule_hotkey_rebind_from_http_thread(_apply_hotkeys_once)
                 _LOG.info("Hotkey sidecar reload requested via HTTP (username=%r)", req_user or None)
                 body = json.dumps({"ok": True, "reloaded": True, "username": user_ref}).encode("utf-8")
                 self.send_response(200)
@@ -275,13 +273,11 @@ def main() -> None:
         _LOG.exception("Pynput hotkey controller failed to initialize")
         sys.exit(1)
 
-    _start_ping_server()
-
     def _noop() -> None:
         return None
 
-    def _apply_hotkeys_once() -> float:
-        toggle_c, cancel_c, secret, mtime = _load_user_chords_and_secret(username)
+    def _apply_hotkeys_once() -> None:
+        toggle_c, cancel_c, secret, _mtime = _load_user_chords_and_secret(username)
         can_bind = bool(secret) and (bool(toggle_c) or bool(cancel_c))
         if can_bind:
             _LOG.info(
@@ -303,10 +299,11 @@ def main() -> None:
                 on_toggle=_noop,
                 on_cancel=_noop,
             )
-        return mtime
 
-    last_applied_mtime = _apply_hotkeys_once()
-    _LOG.info("Pynput mode: signal-driven reload (POST /hotkeys/reload only).")
+    _start_ping_server()
+
+    _apply_hotkeys_once()
+    _LOG.info("Pynput mode: loopback reload (POST /hotkeys/reload); main thread blocks on listener.")
 
     def _shutdown(_signum: int, _frame: Any) -> None:
         _LOG.info("Signal %s: exiting hotkey agent", _signum)
@@ -317,11 +314,7 @@ def main() -> None:
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _shutdown)
 
-    while True:
-        ctrl.pump_events(0.05)
-        if reload_requested.is_set():
-            reload_requested.clear()
-            last_applied_mtime = _apply_hotkeys_once()
+    ctrl.run_event_loop()
 
 
 if __name__ == "__main__":

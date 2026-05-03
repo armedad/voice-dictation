@@ -33,6 +33,7 @@ if str(ROOT) not in sys.path:
 
 from core.hotkey_chord import normalize_chord
 from core.debug_flags_logging import log_debug
+from hotkey_rebind_schedule import schedule_hotkey_rebind_from_http_thread
 
 _LOG = logging.getLogger("hotkey_agent")
 
@@ -218,9 +219,6 @@ def main() -> None:
     toggle_url = f"{base_url}/api/dictation/hotkey/toggle"
     cancel_url = f"{base_url}/api/dictation/hotkey/cancel"
 
-    last_applied_mtime: float | None = None
-    reload_requested = threading.Event()
-
     def _start_ping_server() -> None:
         """Loopback health + control endpoints for hotkey sidecar."""
         try:
@@ -277,7 +275,7 @@ def main() -> None:
                     self.end_headers()
                     self.wfile.write(body)
                     return
-                reload_requested.set()
+                schedule_hotkey_rebind_from_http_thread(_apply_hotkeys_once)
                 _LOG.info("Hotkey sidecar reload requested via HTTP (username=%r)", req_user or None)
                 body = json.dumps({"ok": True, "reloaded": True, "username": user_ref}).encode("utf-8")
                 self.send_response(200)
@@ -435,13 +433,11 @@ def main() -> None:
         # endregion
         sys.exit(1)
 
-    _start_ping_server()
-
     def _noop() -> None:
         return None
 
     def _apply_hotkeys_once() -> None:
-        toggle_c, cancel_c, secret, mtime = _load_user_chords_and_secret(username)
+        toggle_c, cancel_c, secret, _mtime = _load_user_chords_and_secret(username)
         can_bind = bool(secret) and (bool(toggle_c) or bool(cancel_c))
         # region agent log
         _debug_emit(
@@ -454,7 +450,7 @@ def main() -> None:
                 "has_toggle": bool(toggle_c),
                 "has_cancel": bool(cancel_c),
                 "has_secret": bool(secret),
-                "mtime": mtime,
+                "mtime": _mtime,
             },
         )
         # endregion
@@ -478,16 +474,14 @@ def main() -> None:
                 on_toggle=_noop,
                 on_cancel=_noop,
             )
-        return mtime
 
-    # Apply current settings once at startup; further updates are signal-driven.
-    last_applied_mtime = _apply_hotkeys_once()
+    _start_ping_server()
 
-    from PyObjCTools import AppHelper as _AppHelper
+    # Apply current settings once at startup; further updates via POST /hotkeys/reload.
+    _apply_hotkeys_once()
 
-    _quick_poll_sec = 0.05
     _LOG.info(
-        "QuickMachHotkey mode: loopback reload (POST /hotkeys/reload) polled on main run loop."
+        "QuickMachHotkey mode: loopback reload (POST /hotkeys/reload -> AppHelper.callAfter)."
     )
     # region agent log
     _debug_emit(
@@ -499,23 +493,15 @@ def main() -> None:
     )
     # endregion
 
-    def _quick_poll_tick() -> None:
-        nonlocal last_applied_mtime
-        if reload_requested.is_set():
-            reload_requested.clear()
-            last_applied_mtime = _apply_hotkeys_once()
-        _AppHelper.callLater(_quick_poll_sec, _quick_poll_tick)
-
     # region agent log
     _debug_emit(
         run_id=run_id,
         hypothesis_id="H1",
         location="platform_mac/hotkey_agent.py:main:quickmachotkey",
-        message="entering AppHelper.runEventLoop",
+        message="entering QuickMach run_event_loop",
         data={},
     )
     # endregion
-    _AppHelper.callAfter(_quick_poll_tick)
     hotkey_ctrl.run_event_loop()
 
 
