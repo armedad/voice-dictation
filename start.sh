@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Launch twim (FastAPI + static UI): always via run_combined_app.py.
+# Runs stop.sh first to terminate any prior run_combined_app / uvicorn processes.
 #
 # Usage:
 #   ./start.sh                      # macOS: uvicorn + hotkeys; else: API + --reload
@@ -50,6 +51,9 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+echo "==> Stopping any existing dictation stack (stop.sh)"
+bash "$ROOT/stop.sh"
 
 ensure_ollama() {
   mkdir -p "$ROOT/logs"
