@@ -99,9 +99,22 @@
                     <div class="messages" id="messages">
                         <!-- Messages will be added here -->
                     </div>
-                    <div class="chat-input-container">
-                        <textarea id="chat-input" class="chat-input" placeholder="Type your message..." rows="1"></textarea>
-                        <button id="send-btn" class="btn-send">Send</button>
+                    <div
+                        id="chat-input-dock"
+                        class="chat-input-dock"
+                        style="--chat-input-dock-height: 112px"
+                    >
+                        <div
+                            id="chat-input-resizer"
+                            class="chat-input-resizer"
+                            role="separator"
+                            aria-orientation="horizontal"
+                            aria-label="Drag to resize chat input height. Double-click to reset."
+                        ></div>
+                        <div class="chat-input-container">
+                            <textarea id="chat-input" class="chat-input" placeholder="Type your message..." rows="1"></textarea>
+                            <button id="send-btn" class="btn-send">Send</button>
+                        </div>
                     </div>
                 </div>
             </div>
