@@ -66,8 +66,8 @@ cd "coding/voice-dictation-mvp"
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-agent.txt
 ollama serve   # in another terminal, with your chat model pulled
-python run_agent.py demo-wav /path/to/sample.wav
-python run_agent.py record-once --seconds 4 --no-type
+python dictation_cli.py demo-wav /path/to/sample.wav
+python dictation_cli.py record-once --seconds 4 --no-type
 ```
 
 First run creates **`~/.voice-dictation/config.json`** from the example file if missing. To re-seed after we change defaults, delete that file and run again.
