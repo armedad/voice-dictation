@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Voice dictation MVP — one-shot dev install (venv, Python deps, optional model prefetch).
 #
+# Uses CHEEAPPS_VENV: folder for the virtualenv (same convention as gauth). If unset in an
+# interactive terminal, you are prompted. Non-interactive: set CHEEAPPS_VENV, e.g.
+#   CHEEAPPS_VENV="$HOME/venvs/cheeapps-stack" ./install.sh
+# The resolved path is written to .voice_dictation_venv for ./start.sh.
+#
 # Windows: use install.bat in this directory (same flags, shared scripts/install_post_pip.py).
 #
 # Usage:
@@ -10,8 +15,10 @@
 #   ./install.sh --skip-whisper   # skip faster-whisper weight download
 #   ./install.sh --skip-twim      # skip twim UI dependencies (alias: --skip-ai-frame)
 #   ./install.sh --with-spike     # also install spike/ requirements (mac permission lab)
-#   ./install.sh --recreate-venv  # rm -rf .venv before creating
+#   ./install.sh --recreate-venv  # remove existing venv at CHEEAPPS_VENV path, then recreate
 #
+# Env:
+#   CHEEAPPS_VENV                  virtualenv directory (required non-interactive; else prompted)
 # Env (optional, for Whisper preload):
 #   VOICE_DICTATION_WHISPER_DEVICE   default cpu (cuda if you have NVIDIA + CUDA build)
 #   VOICE_DICTATION_WHISPER_COMPUTE  default int8
@@ -36,7 +43,7 @@ for arg in "$@"; do
     --with-spike) WITH_SPIKE=true ;;
     --recreate-venv) RECREATE_VENV=true ;;
     -h|--help)
-      sed -n '2,17p' "$0"
+      sed -n '2,25p' "$0"
       exit 0
       ;;
   esac
@@ -48,6 +55,34 @@ if [[ "$AGENT_ONLY" == true ]]; then
   SKIP_WHISPER=true
   WITH_SPIKE=false
 fi
+
+if [[ -z "${CHEEAPPS_VENV:-}" ]]; then
+  if [[ ! -t 0 ]]; then
+    echo "CHEEAPPS_VENV must be set when running non-interactively (no TTY)." >&2
+    echo "Example: CHEEAPPS_VENV=\"\$HOME/venvs/cheeapps-stack\" $0" >&2
+    exit 1
+  fi
+  read -r -p "Path for virtual environment (created if missing): " CHEEAPPS_VENV
+fi
+
+CHEEAPPS_VENV="${CHEEAPPS_VENV#"${CHEEAPPS_VENV%%[![:space:]]*}"}"
+CHEEAPPS_VENV="${CHEEAPPS_VENV%"${CHEEAPPS_VENV##*[![:space:]]}"}"
+
+if [[ -z "$CHEEAPPS_VENV" ]]; then
+  echo "Error: path is required (set CHEEAPPS_VENV or enter a path when prompted)." >&2
+  exit 1
+fi
+
+case "$CHEEAPPS_VENV" in
+  /*) VENV_DIR="$CHEEAPPS_VENV" ;;
+  *) VENV_DIR="$ROOT/$CHEEAPPS_VENV" ;;
+esac
+
+mkdir -p "$(dirname "$VENV_DIR")"
+VENV_DIR="$(cd "$(dirname "$VENV_DIR")" && pwd)/$(basename "$VENV_DIR")"
+
+echo "Virtual environment: $VENV_DIR"
+printf '%s\n' "$VENV_DIR" >"$ROOT/.voice_dictation_venv"
 
 echo "==> Voice dictation MVP install (root: $ROOT)"
 
@@ -84,20 +119,28 @@ elif [[ "$(uname -s)" == "Darwin" ]]; then
   echo "warning: Homebrew not found. If sounddevice fails to install, install PortAudio." >&2
 fi
 
-if [[ "$RECREATE_VENV" == true ]] && [[ -d .venv ]]; then
-  echo "==> Removing existing .venv (--recreate-venv) ..."
-  rm -rf .venv
+if [[ "$RECREATE_VENV" == true ]]; then
+  if [[ -d "$VENV_DIR" ]] && [[ -f "$VENV_DIR/pyvenv.cfg" ]]; then
+    echo "==> Removing existing venv (--recreate-venv) at $VENV_DIR ..."
+    rm -rf "$VENV_DIR"
+  elif [[ -e "$VENV_DIR" ]]; then
+    echo "error: --recreate-venv: $VENV_DIR exists but is not a Python venv (missing pyvenv.cfg)." >&2
+    exit 1
+  fi
 fi
 
-if [[ ! -d .venv ]]; then
-  echo "==> Creating venv .venv ..."
-  "$PY" -m venv .venv
+if [[ -d "$VENV_DIR" ]] && [[ -f "$VENV_DIR/pyvenv.cfg" ]]; then
+  echo "==> Using existing virtual environment."
+elif [[ -e "$VENV_DIR" ]]; then
+  echo "error: $VENV_DIR exists but is not a Python venv (missing pyvenv.cfg)." >&2
+  exit 1
 else
-  echo "==> Reusing existing .venv (use --recreate-venv to start clean) ..."
+  echo "==> Creating virtual environment..."
+  "$PY" -m venv "$VENV_DIR"
 fi
 
 # shellcheck disable=SC1091
-source .venv/bin/activate
+source "$VENV_DIR/bin/activate"
 
 python -m pip install -U pip wheel setuptools
 
@@ -154,8 +197,9 @@ fi
 
 echo ""
 echo "==> Done."
-echo "    Activate:  source .venv/bin/activate"
+echo "    Path saved in .voice_dictation_venv. Next time: export CHEEAPPS_VENV=\"$VENV_DIR\" to skip the prompt."
+echo "    Activate:  source \"$VENV_DIR/bin/activate\""
 echo "    Pipeline CLI: python dictation_cli.py record-once --seconds 4 --no-type"
-echo "    Settings:  ./start.sh  → http://127.0.0.1:8000/ (see banner printed by start.sh)"
+echo "    Settings:  ./start.sh  → http://127.0.0.1:8946/ (see banner printed by start.sh)"
 echo "    Config:    ~/.voice-dictation/config.json (created on first agent run if missing)"
 echo "    Windows:   install.bat (same flags; shared scripts/install_post_pip.py)"
