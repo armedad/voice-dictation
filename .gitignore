@@ -1,4 +1,5 @@
 # Python
+.voice_dictation_venv
 .venv/
 venv/
 env/

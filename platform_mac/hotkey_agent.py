@@ -5,9 +5,12 @@ Uses system hotkey registration (narrow scope) instead of a global key tap, so m
 typically does **not** require Input Monitoring for this sidecar.
 
 Env:
-  VOICE_DICTATION_PORT — default 8000 (twim URL for toggle/cancel POST)
+  VOICE_DICTATION_PORT — default 8946 (twim URL for toggle/cancel POST)
   VOICE_DICTATION_TWIM_USER — username under twim/users/ (legacy: VOICE_DICTATION_AI_FRAME_USER)
   VOICE_DICTATION_HOTKEY_PING_PORT — loopback HTTP ``/health`` for liveness (default 18447)
+
+If unset, uses ``twim/users/.hotkey_agent_target_username`` when present, else ``_default`` when
+``twim/users/_default/settings.json`` exists (install seed).
 """
 from __future__ import annotations
 
@@ -31,6 +34,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from core.default_twim_port import DEFAULT_TWIM_HTTP_PORT
+from core.hotkey_agent_username import resolve_hotkey_agent_username
 from core.hotkey_chord import normalize_chord
 from core.debug_flags_logging import log_debug
 from hotkey_rebind_schedule import schedule_hotkey_rebind_from_http_thread
@@ -63,26 +68,6 @@ def _debug_emit(
 
 def _users_dir() -> Path:
     return ROOT / "twim" / "users"
-
-
-def _resolve_username() -> str:
-    """Prefer env, then marker file written when hotkeys are saved in the UI."""
-    env_u = (
-        os.environ.get("VOICE_DICTATION_TWIM_USER")
-        or os.environ.get("VOICE_DICTATION_AI_FRAME_USER")
-        or ""
-    ).strip()
-    if env_u:
-        return env_u
-    marker = _users_dir() / ".hotkey_agent_target_username"
-    if marker.exists():
-        try:
-            t = marker.read_text(encoding="utf-8").strip()
-        except OSError:
-            t = ""
-        if t and (_users_dir() / t).is_dir():
-            return t
-    return ""
 
 
 def _load_user_chords_and_secret(
@@ -187,13 +172,13 @@ def main() -> None:
 
     from platform_mac.quickmachotkey_hotkeys import QuickMachHotkeyController
 
-    port = int(os.environ.get("VOICE_DICTATION_PORT", "8000"))
-    username = _resolve_username()
+    port = int(os.environ.get("VOICE_DICTATION_PORT", str(DEFAULT_TWIM_HTTP_PORT)))
+    username = resolve_hotkey_agent_username(ROOT)
     if not username:
         _LOG.error(
             "No hotkey agent user: set VOICE_DICTATION_TWIM_USER (or legacy VOICE_DICTATION_AI_FRAME_USER), "
             "or save a dictation hotkey in Preferences while logged in (writes twim/users/.hotkey_agent_target_username), "
-            "or use a single local account."
+            "or run install so twim/users/_default/settings.json exists."
         )
         # region agent log
         _debug_emit(
