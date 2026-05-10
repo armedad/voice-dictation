@@ -17,7 +17,18 @@ if str(VOICE_DICTATION_ROOT) not in sys.path:
 
 from core.default_twim_port import DEFAULT_TWIM_HTTP_PORT
 
-from app.routers import auth, chat, models, settings, client_log, notifications, providers, dictation, dictation_events
+from app.routers import (
+    auth,
+    chat,
+    client_log,
+    dictation,
+    dictation_events,
+    local_shutdown,
+    models,
+    notifications,
+    providers,
+    settings,
+)
 from core.debug_flags_logging import log_system
 
 # Directories
@@ -92,6 +103,7 @@ app.include_router(notifications.router, prefix="/api")
 app.include_router(providers.router, prefix="/api")
 app.include_router(dictation.router, prefix="/api")
 app.include_router(dictation_events.router, prefix="/api")
+app.include_router(local_shutdown.router, prefix="/api")
 
 # Serve static files
 STATIC_DIR = Path(__file__).parent / "static"

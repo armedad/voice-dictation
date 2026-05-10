@@ -184,6 +184,38 @@ function setupEventListeners() {
         await createConversation();
     });
 
+    document.getElementById('quit-app-btn')?.addEventListener('click', async () => {
+        if (
+            !confirm(
+                'Stop the voice dictation server and exit the combined app?\n\n(This ends start.bat / the process that launched run_combined_app.)'
+            )
+        ) {
+            return;
+        }
+        try {
+            const res = await fetch('/api/local/shutdown', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}',
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                const detail =
+                    typeof err.detail === 'string'
+                        ? err.detail
+                        : Array.isArray(err.detail)
+                          ? err.detail.map((d) => d.msg || d).join('; ')
+                          : res.statusText;
+                alert(detail || 'Quit is not available for this server launch.');
+                return;
+            }
+            document.getElementById('quit-app-btn').textContent = 'Stopping…';
+        } catch (e) {
+            alert(e?.message || String(e));
+        }
+    });
+
     const dictateBtn = document.getElementById('dictate-10s-btn');
     if (dictateBtn) {
         const defaultLabel = dictateBtn.textContent;

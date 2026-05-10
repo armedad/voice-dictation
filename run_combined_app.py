@@ -37,6 +37,9 @@ def _debug_emit(
 
 
 def main() -> None:
+    # Enables POST /api/local/shutdown from the twim UI (loopback-only) to exit this process.
+    os.environ["VOICE_DICTATION_COMBINED_LAUNCHER"] = "1"
+
     p = argparse.ArgumentParser(description="Single-process Voice Dictation MVP launcher.")
     p.add_argument("--port", type=int, default=DEFAULT_TWIM_HTTP_PORT)
     p.add_argument(
