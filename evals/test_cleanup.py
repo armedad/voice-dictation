@@ -45,20 +45,67 @@ def _judge_model(cfg: dict[str, Any]) -> OllamaModel:
     )
 
 
+def _cleanup_failure_context(case: dict[str, Any], output: str) -> str:
+    """Full verbatim strings for logs (pytest truncates LLMTestCase repr in tracebacks)."""
+    expected = case_expected_output(case)
+    lines = [
+        "--- raw_transcript (INPUT) ---",
+        case["raw_transcript"],
+        "--- cleanup actual_output (verbatim) ---",
+        output,
+    ]
+    if expected is not None:
+        lines.extend(["--- expected_output (golden) ---", expected])
+    vocab = case.get("vocabulary")
+    if vocab:
+        lines.extend(["--- vocabulary ---", str(vocab)])
+    instructions = case.get("user_instructions")
+    if instructions:
+        lines.extend(["--- user_instructions ---", str(instructions)])
+    return "\n".join(lines)
+
+
+def _raise_cleanup_failure(
+    case: dict[str, Any],
+    output: str,
+    message: str,
+    *,
+    cause: BaseException | None = None,
+    suppress_cause: bool = False,
+) -> None:
+    """
+    Raise with full verbatim cleanup context.
+
+    GEval failures pass ``suppress_cause=True`` so pytest does not print the inner
+    ``assert_test`` frame (``saferepr`` truncates ``LLMTestCase`` at 240 chars).
+    """
+    err = AssertionError(f"{message}\n\n{_cleanup_failure_context(case, output)}")
+    if cause is not None:
+        if suppress_cause:
+            raise err from None
+        raise err from cause
+    raise err
+
+
 def _assert_deterministic_gates(case: dict[str, Any], output: str) -> None:
     case_id = case["id"]
-    assert (output or "").strip(), f"Case {case_id!r}: cleanup returned empty output"
+    if not (output or "").strip():
+        _raise_cleanup_failure(case, output, f"Case {case_id!r}: cleanup returned empty output")
 
     lower = output.lower()
     for phrase in case.get("expected_contains") or []:
         if phrase.lower() not in lower:
-            raise AssertionError(
-                f"Case {case_id!r}: output must contain {phrase!r}; got: {output!r}"
+            _raise_cleanup_failure(
+                case,
+                output,
+                f"Case {case_id!r}: output must contain {phrase!r}",
             )
     for phrase in case.get("expected_not_contains") or []:
         if phrase.lower() in lower:
-            raise AssertionError(
-                f"Case {case_id!r}: output must not contain {phrase!r}; got: {output!r}"
+            _raise_cleanup_failure(
+                case,
+                output,
+                f"Case {case_id!r}: output must not contain {phrase!r}",
             )
 
 
@@ -79,7 +126,16 @@ def _assert_geval_rubric(case: dict[str, Any], eval_config: dict[str, Any], outp
         actual_output=output,
         expected_output=case_expected_output(case),
     )
-    assert_test(test_case, [metric], run_async=False)
+    try:
+        assert_test(test_case, [metric], run_async=False)
+    except AssertionError as exc:
+        _raise_cleanup_failure(
+            case,
+            output,
+            f"Case {case['id']!r}: GEval judge failed (threshold {threshold}): {exc}",
+            cause=exc,
+            suppress_cause=True,
+        )
 
 
 @pytest.mark.parametrize("case", load_cleanup_cases(), ids=lambda c: c["id"])
