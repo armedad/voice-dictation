@@ -58,11 +58,10 @@ def cmd_prefetch_whisper_eval() -> int:
     return _load_whisper_model(model)
 
 
-def cmd_print_eval_ollama_models() -> int:
-    """Print unique Ollama model names from eval config (one per line)."""
-    root = _root()
-    cfg = _load_eval_config(root)
+def _eval_ollama_role_models(cfg: dict) -> list[tuple[str, str]]:
+    """(role, model) pairs for cleanup and judge; dedupe by model name (first role wins)."""
     seen: set[str] = set()
+    roles: list[tuple[str, str]] = []
     for key in ("cleanup", "judge"):
         block = cfg.get(key) or {}
         prov = (block.get("provider") or "").lower().replace("-", "_")
@@ -71,7 +70,41 @@ def cmd_print_eval_ollama_models() -> int:
         name = (block.get("model") or "").strip()
         if name and name not in seen:
             seen.add(name)
-            print(name)
+            roles.append((key, name))
+    return roles
+
+
+def cmd_print_eval_ollama_models() -> int:
+    """Print unique Ollama model names from eval config (one per line)."""
+    for _role, name in _eval_ollama_role_models(_load_eval_config(_root())):
+        print(name)
+    return 0
+
+
+def cmd_print_eval_ollama_models_to_pull() -> int:
+    """
+    Print ``role<TAB>model`` for eval models that should be pulled.
+
+    If Ollama is reachable, skips models already present (/api/tags).
+    If Ollama is down, prints all configured models so install can still ``ollama pull``.
+    """
+    root = _root()
+    roles = _eval_ollama_role_models(_load_eval_config(root))
+    if not roles:
+        return 0
+
+    sys.path.insert(0, str(root))
+    try:
+        from evals.helpers import ollama_has_model, ollama_is_up
+    except ImportError:
+        for role, name in roles:
+            print(f"{role}\t{name}")
+        return 0
+
+    if ollama_is_up():
+        roles = [(role, name) for role, name in roles if not ollama_has_model(name)]
+    for role, name in roles:
+        print(f"{role}\t{name}")
     return 0
 
 
@@ -106,12 +139,14 @@ def main() -> int:
             "print-ollama-cleanup-model",
             "prefetch-whisper-eval",
             "print-eval-ollama-models",
+            "print-eval-ollama-models-to-pull",
         ),
         help=(
             "prefetch-whisper: Whisper weights from example config; "
             "prefetch-whisper-eval: from evals/eval_config.json; "
             "print-ollama-cleanup-model: cleanup model from example config; "
-            "print-eval-ollama-models: unique cleanup/judge models from eval config"
+            "print-eval-ollama-models: unique cleanup/judge models from eval config; "
+            "print-eval-ollama-models-to-pull: role+model lines for models not yet local"
         ),
     )
     args = p.parse_args()
@@ -121,6 +156,8 @@ def main() -> int:
         return cmd_prefetch_whisper_eval()
     if args.command == "print-eval-ollama-models":
         return cmd_print_eval_ollama_models()
+    if args.command == "print-eval-ollama-models-to-pull":
+        return cmd_print_eval_ollama_models_to_pull()
     return cmd_print_ollama_cleanup_model()
 
 

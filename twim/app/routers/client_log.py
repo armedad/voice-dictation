@@ -1,4 +1,5 @@
 """Client-side logging endpoint - receives logs from frontend and writes to server log."""
+import os
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import List, Optional
@@ -9,7 +10,8 @@ router = APIRouter(tags=["logging"])
 
 # Logs directory
 PROJECT_DIR = Path(__file__).parent.parent.parent
-LOGS_DIR = PROJECT_DIR / "logs"
+_override_logs = os.environ.get("TWIM_LOGS_DIR")
+LOGS_DIR = Path(_override_logs) if _override_logs else PROJECT_DIR / "logs"
 
 
 def sanitize_for_console(text: str) -> str:

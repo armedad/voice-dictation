@@ -1,0 +1,12 @@
+{
+  "id": "full_feature_example",
+  "raw_transcript": "um so like hey can you uh schedule a sync with Priya about the Q3 report for tuesday at 3 p.m.",
+  "vocabulary": "Priya\nQ3 report",
+  "user_instructions": "Use sentence case. Keep times in 12-hour form with a.m. and p.m.",
+  "expected_output": "Schedule a sync with Priya about the Q3 report for Tuesday at 3 p.m.",
+  "expected_contains": ["Priya", "Q3", "Tuesday", "3"],
+  "expected_not_contains": ["```", "Here is", "Sure,", "I'll schedule"],
+  "geval_criteria_augment": "OUTPUT must be a single plain-text scheduling request, not an assistant confirmation or calendar action. Do not add hedging like 'I will' or 'Let me'.",
+  "min_geval_score": 0.5,
+  "skip_geval": false
+}

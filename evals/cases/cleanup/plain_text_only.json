@@ -6,5 +6,6 @@
   "expected_contains": ["JIRA"],
   "expected_not_contains": ["```", "**", "# "],
   "min_geval_score": 0.5,
-  "skip_geval": false
+  "skip_geval": false,
+  "geval_criteria_augment": "OUTPUT must be plain text only: no markdown headings, bold, code fences, or bullet lists."
 }

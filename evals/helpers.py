@@ -57,6 +57,55 @@ def ollama_has_model(model_name: str, timeout: float = 2.0) -> bool:
     return False
 
 
+def eval_ollama_model_names(cfg: Optional[dict[str, Any]] = None) -> list[str]:
+    """Unique cleanup + judge model names from eval config."""
+    c = cfg or load_eval_config()
+    names: list[str] = []
+    for key in ("cleanup", "judge"):
+        block = c.get(key) or {}
+        prov = (block.get("provider") or "").lower().replace("-", "_")
+        if prov not in ("ollama_chat", "ollama"):
+            continue
+        name = (block.get("model") or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def ollama_eval_prereq_error() -> Optional[str]:
+    """
+    Return a human-readable error if Ollama eval prerequisites are not met, else None.
+    """
+    base = ollama_base_url()
+    if not ollama_is_up():
+        return (
+            f"Ollama is not reachable at {base}.\n"
+            "Start the Ollama app (menu bar on macOS) or ensure one server is listening on "
+            "OLLAMA_HOST / OLLAMA_PORT (default 127.0.0.1:11434).\n"
+            "If you see 'address already in use', Ollama is likely already running — "
+            "do not start a second 'ollama serve'.\n"
+            "Cleanup and GEval evals require a running Ollama instance."
+        )
+
+    cfg = load_eval_config()
+    missing = [m for m in eval_ollama_model_names(cfg) if not ollama_has_model(m)]
+    if missing:
+        pulls = " && ".join(f"ollama pull {m}" for m in missing)
+        return (
+            f"Ollama at {base} is up but required eval model(s) are missing: {', '.join(missing)}.\n"
+            f"Pull them with: {pulls}\n"
+            "(Models are listed in evals/eval_config.json; install-tests.sh can pull them.)"
+        )
+    return None
+
+
+def require_ollama_for_evals() -> None:
+    """Exit the process with a clear message if Ollama eval prerequisites are not met."""
+    err = ollama_eval_prereq_error()
+    if err:
+        raise SystemExit(f"error: {err}")
+
+
 def transcription_endpoint(cfg: Optional[dict[str, Any]] = None) -> AdapterEndpoint:
     c = cfg or load_eval_config()
     t = c["transcription"]
@@ -74,7 +123,7 @@ def cleanup_endpoint(cfg: Optional[dict[str, Any]] = None) -> AdapterEndpoint:
     return AdapterEndpoint(
         provider=clean.get("provider", "ollama_chat"),
         baseURL=base,
-        model=clean.get("model", "llama3.2"),
+        model=clean.get("model", "llama3.2:3b"),
     )
 
 
@@ -147,6 +196,20 @@ async def run_cleanup_only(
     )
 
 
+async def run_cleanup_for_case(
+    case: dict[str, Any],
+    *,
+    cfg: Optional[dict[str, Any]] = None,
+) -> str:
+    """Run cleanup for one eval case dict (``raw_transcript``, vocabulary, user_instructions)."""
+    return await run_cleanup_only(
+        case["raw_transcript"],
+        cfg=cfg,
+        vocabulary=case.get("vocabulary"),
+        user_instructions=case.get("user_instructions"),
+    )
+
+
 def load_stt_cases() -> list[dict[str, Any]]:
     meta = EVALS_ROOT / "cases" / "stt" / "metadata.json"
     data = json.loads(meta.read_text(encoding="utf-8"))
@@ -164,3 +227,72 @@ def load_cleanup_cases() -> list[dict[str, Any]]:
     for path in sorted(cases_dir.glob("*.json")):
         out.append(json.loads(path.read_text(encoding="utf-8")))
     return out
+
+
+def load_cleanup_cases_for_geval() -> list[dict[str, Any]]:
+    """Cleanup cases that run GEval (excludes ``skip_geval: true``)."""
+    return [c for c in load_cleanup_cases() if not c.get("skip_geval")]
+
+
+GEVAL_CLEANUP_CRITERIA_PATH = EVALS_ROOT / "geval_cleanup_criteria.json"
+
+
+def load_geval_cleanup_base_criteria(
+    path: Path | None = None,
+) -> str:
+    """Load shared GEval rubric text from evals/geval_cleanup_criteria.json."""
+    p = path or GEVAL_CLEANUP_CRITERIA_PATH
+    data = json.loads(p.read_text(encoding="utf-8"))
+    criteria = data.get("criteria")
+    if not isinstance(criteria, str) or not criteria.strip():
+        raise ValueError(f"{p}: missing non-empty string field 'criteria'")
+    return criteria.strip()
+
+
+def case_expected_output(case: dict[str, Any]) -> Optional[str]:
+    """Golden cleaned text for GEval, from case JSON field ``expected_output``."""
+    eo = case.get("expected_output")
+    if isinstance(eo, str) and eo.strip():
+        return eo.strip()
+    return None
+
+
+_GEVAL_EXPECTED_OUTPUT_SUFFIX = (
+    " When EXPECTED OUTPUT is provided, score 1.0 if ACTUAL OUTPUT matches its meaning "
+    "(minor punctuation or wording differences are fine unless case-specific rules say otherwise)."
+)
+
+
+def build_geval_criteria_for_case(case: dict[str, Any]) -> str:
+    """
+    GEval rubric for one cleanup case: base criteria plus optional per-case augment.
+
+    Case JSON may include ``geval_criteria_augment`` (appended to the base) or
+    ``geval_criteria`` (replaces the shared base file; augment still appended if present).
+    """
+    override = case.get("geval_criteria")
+    if isinstance(override, str) and override.strip():
+        base = override.strip()
+    else:
+        base = load_geval_cleanup_base_criteria()
+
+    if case_expected_output(case) is not None:
+        base = f"{base}{_GEVAL_EXPECTED_OUTPUT_SUFFIX}"
+
+    augment = case.get("geval_criteria_augment")
+    if isinstance(augment, str) and augment.strip():
+        return f"{base} {augment.strip()}"
+    return base
+
+
+def geval_evaluation_params_for_case(case: dict[str, Any]) -> list[Any]:
+    """DeepEval ``SingleTurnParams`` list; includes EXPECTED_OUTPUT when case provides it."""
+    from deepeval.test_case.llm_test_case import SingleTurnParams
+
+    params: list[Any] = [
+        SingleTurnParams.INPUT,
+        SingleTurnParams.ACTUAL_OUTPUT,
+    ]
+    if case_expected_output(case) is not None:
+        params.append(SingleTurnParams.EXPECTED_OUTPUT)
+    return params
