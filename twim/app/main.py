@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+import os
 from pathlib import Path
 from datetime import datetime
 import sys
@@ -14,7 +15,20 @@ VOICE_DICTATION_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(VOICE_DICTATION_ROOT) not in sys.path:
     sys.path.insert(0, str(VOICE_DICTATION_ROOT))
 
-from app.routers import auth, chat, models, settings, client_log, notifications, providers, dictation, dictation_events
+from core.default_twim_port import DEFAULT_TWIM_HTTP_PORT
+
+from app.routers import (
+    auth,
+    chat,
+    client_log,
+    dictation,
+    dictation_events,
+    local_shutdown,
+    models,
+    notifications,
+    providers,
+    settings,
+)
 from core.debug_flags_logging import log_system
 
 # Directories
@@ -26,12 +40,13 @@ LOGS_DIR = PROJECT_DIR / "logs"
 def print_startup_banner():
     """Print a clear startup banner to logs."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    port = (os.environ.get("VOICE_DICTATION_PORT") or "").strip() or str(DEFAULT_TWIM_HTTP_PORT)
     banner = f"""
 ================================================================================
   twim — voice dictation settings + API
   Time: {timestamp}
-  Port: 8000
-  URL:  http://localhost:8000
+  Port: {port}
+  URL:  http://localhost:{port}
 ================================================================================
 """
     print(banner, flush=True)
@@ -88,6 +103,7 @@ app.include_router(notifications.router, prefix="/api")
 app.include_router(providers.router, prefix="/api")
 app.include_router(dictation.router, prefix="/api")
 app.include_router(dictation_events.router, prefix="/api")
+app.include_router(local_shutdown.router, prefix="/api")
 
 # Serve static files
 STATIC_DIR = Path(__file__).parent / "static"

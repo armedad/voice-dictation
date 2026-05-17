@@ -281,6 +281,12 @@ html, body {
     gap: 12px;
 }
 
+.btn-quit-app {
+    font-size: 12px;
+    padding: 6px 10px;
+    flex-shrink: 0;
+}
+
 .header-app-nav {
     display: flex;
     align-items: center;
