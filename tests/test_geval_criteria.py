@@ -84,3 +84,23 @@ def test_load_base_criteria_rejects_empty(tmp_path: Path) -> None:
     bad.write_text(json.dumps({"criteria": ""}), encoding="utf-8")
     with pytest.raises(ValueError, match="criteria"):
         load_geval_cleanup_base_criteria(bad)
+
+
+def test_cleanup_failure_context_includes_full_verbatim_output() -> None:
+    from evals.test_cleanup import _cleanup_failure_context
+
+    long_output = "x" * 400
+    case = {
+        "id": "sample",
+        "raw_transcript": "um hello world",
+        "expected_output": "Hello world.",
+        "vocabulary": ["Q3"],
+        "user_instructions": "Use formal tone.",
+    }
+    ctx = _cleanup_failure_context(case, long_output)
+    assert long_output in ctx
+    assert "cleanup actual_output (verbatim)" in ctx
+    assert "um hello world" in ctx
+    assert "Hello world." in ctx
+    assert "Q3" in ctx
+    assert "formal tone" in ctx
