@@ -1,0 +1,19 @@
+{
+  "transcription": {
+    "provider": "faster_whisper",
+    "model": "base"
+  },
+  "cleanup": {
+    "provider": "ollama_chat",
+    "baseURL": "http://127.0.0.1:11434",
+    "model": "llama3.2"
+  },
+  "judge": {
+    "provider": "ollama",
+    "baseURL": "http://127.0.0.1:11434",
+    "model": "llama3.2",
+    "temperature": 0
+  },
+  "stt_max_wer_default": 0.25,
+  "cleanup_geval_threshold": 0.5
+}

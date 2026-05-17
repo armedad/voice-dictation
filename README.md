@@ -72,6 +72,36 @@ python dictation_cli.py record-once --seconds 4 --no-type
 
 First run creates **`~/.voice-dictation/config.json`** from the example file if missing. To re-seed after we change defaults, delete that file and run again.
 
+## AI evals (regression)
+
+Local **STT** (WER via [jiwer](https://github.com/j-hyphen/jiwer)) and **cleanup** (rubrics via [DeepEval](https://github.com/confident-ai/deepeval) + Ollama judge). Config: [`evals/eval_config.json`](evals/eval_config.json).
+
+**One-shot install** (venv, pytest, deepeval, jiwer, Whisper weights, `ollama pull` for eval models). Does **not** start `ollama serve` — use the Ollama app or an existing server on port 11434.
+
+```bash
+cd "coding/voice-dictation-mvp"
+./install-tests.sh          # macOS / Linux
+install-tests.bat           # Windows
+```
+
+Manual setup (equivalent):
+
+```bash
+cd "coding/voice-dictation-mvp"
+source .venv/bin/activate
+pip install -r requirements-dev.txt -r requirements-eval.txt
+# Ollama must already be running (app or one ollama serve on 11434)
+
+pytest tests/ -q                           # unit tests only (fast)
+pytest evals/ -m "not slow and not requires_ollama" -q   # (none by default)
+pytest evals/ -m slow -q                     # faster-whisper WER on fixture WAVs
+pytest evals/ -m requires_ollama -q          # cleanup deterministic gates (Ollama)
+pytest evals/ -q                             # STT + cleanup deterministic
+VOICE_DICTATION_RUN_GEVAL=1 pytest evals/ -m geval_judge -q   # optional GEval judge
+```
+
+Add STT clips under [`evals/cases/stt/`](evals/cases/stt/) and list them in `metadata.json`. Add cleanup scenarios as JSON under [`evals/cases/cleanup/`](evals/cases/cleanup/). Override models via `evals/eval_config.json` or `OLLAMA_HOST` / `OLLAMA_PORT`.
+
 ## Debug Logging
 
 - The **Settings → Debug → Debug Flags** UI is the shared logging control plane for both frontend and backend debug traces.

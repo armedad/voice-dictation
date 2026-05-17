@@ -1,0 +1,10 @@
+{
+  "id": "plain_text_only",
+  "raw_transcript": "please update the JIRA ticket with the latest status",
+  "vocabulary": "JIRA",
+  "user_instructions": "Use sentence case.",
+  "expected_contains": ["JIRA"],
+  "expected_not_contains": ["```", "**", "# "],
+  "min_geval_score": 0.5,
+  "skip_geval": false
+}

@@ -1,0 +1,3 @@
+{"id": "filler_rewrite", "raw_transcript": "um so like I need to send the report to Sarah by end of day", "note": "See evals/cases/cleanup/filler_rewrite.json for full case config"}
+{"id": "question_not_answered", "raw_transcript": "um so like what is the capital of France", "note": "See evals/cases/cleanup/question_not_answered.json"}
+{"id": "plain_text_only", "raw_transcript": "please update the JIRA ticket with the latest status", "note": "See evals/cases/cleanup/plain_text_only.json"}

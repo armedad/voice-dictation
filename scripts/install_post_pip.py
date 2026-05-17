@@ -15,6 +15,17 @@ def _root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def _load_whisper_model(model: str) -> int:
+    device = os.environ.get("VOICE_DICTATION_WHISPER_DEVICE", "cpu")
+    compute = os.environ.get("VOICE_DICTATION_WHISPER_COMPUTE", "int8")
+    print(f"Loading WhisperModel({model!r}, device={device!r}, compute_type={compute!r}) ...")
+    from faster_whisper import WhisperModel  # noqa: E402
+
+    WhisperModel(model, device=device, compute_type=compute)
+    print("Whisper weights ready.")
+    return 0
+
+
 def cmd_prefetch_whisper() -> int:
     root = _root()
     cfg_path = root / "config" / "example-model-settings.json"
@@ -25,13 +36,42 @@ def cmd_prefetch_whisper() -> int:
         print("Skipping Whisper preload: transcription.provider is not faster_whisper in example config.")
         return 0
     model = t.get("model") or "base"
-    device = os.environ.get("VOICE_DICTATION_WHISPER_DEVICE", "cpu")
-    compute = os.environ.get("VOICE_DICTATION_WHISPER_COMPUTE", "int8")
-    print(f"Loading WhisperModel({model!r}, device={device!r}, compute_type={compute!r}) ...")
-    from faster_whisper import WhisperModel  # noqa: E402
+    return _load_whisper_model(model)
 
-    WhisperModel(model, device=device, compute_type=compute)
-    print("Whisper weights ready.")
+
+def _load_eval_config(root: Path) -> dict:
+    cfg_path = root / "evals" / "eval_config.json"
+    return json.loads(cfg_path.read_text(encoding="utf-8"))
+
+
+def cmd_prefetch_whisper_eval() -> int:
+    root = _root()
+    cfg = _load_eval_config(root)
+    t = cfg.get("transcription") or {}
+    prov = (t.get("provider") or "").lower().replace("-", "_")
+    if prov not in ("faster_whisper", "local_faster_whisper"):
+        print(
+            "Skipping Whisper preload: transcription.provider is not faster_whisper in evals/eval_config.json."
+        )
+        return 0
+    model = t.get("model") or "base"
+    return _load_whisper_model(model)
+
+
+def cmd_print_eval_ollama_models() -> int:
+    """Print unique Ollama model names from eval config (one per line)."""
+    root = _root()
+    cfg = _load_eval_config(root)
+    seen: set[str] = set()
+    for key in ("cleanup", "judge"):
+        block = cfg.get(key) or {}
+        prov = (block.get("provider") or "").lower().replace("-", "_")
+        if prov not in ("ollama_chat", "ollama"):
+            continue
+        name = (block.get("model") or "").strip()
+        if name and name not in seen:
+            seen.add(name)
+            print(name)
     return 0
 
 
@@ -51,12 +91,26 @@ def main() -> int:
     p = argparse.ArgumentParser(description="Install helpers after pip (cross-platform).")
     p.add_argument(
         "command",
-        choices=("prefetch-whisper", "print-ollama-cleanup-model"),
-        help="prefetch-whisper: download Whisper weights; print-ollama-cleanup-model: print model name or nothing",
+        choices=(
+            "prefetch-whisper",
+            "print-ollama-cleanup-model",
+            "prefetch-whisper-eval",
+            "print-eval-ollama-models",
+        ),
+        help=(
+            "prefetch-whisper: Whisper weights from example config; "
+            "prefetch-whisper-eval: from evals/eval_config.json; "
+            "print-ollama-cleanup-model: cleanup model from example config; "
+            "print-eval-ollama-models: unique cleanup/judge models from eval config"
+        ),
     )
     args = p.parse_args()
     if args.command == "prefetch-whisper":
         return cmd_prefetch_whisper()
+    if args.command == "prefetch-whisper-eval":
+        return cmd_prefetch_whisper_eval()
+    if args.command == "print-eval-ollama-models":
+        return cmd_print_eval_ollama_models()
     return cmd_print_ollama_cleanup_model()
 
 
