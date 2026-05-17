@@ -39,6 +39,7 @@ async def test_prompt_defaults_requires_auth(async_client: AsyncClient) -> None:
 
 async def test_prompt_defaults(async_client: AsyncClient) -> None:
     await _register_with_model(async_client, cleanup_enabled=True)
+    from app.services.storage import DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE
     from core.models import (
         DEFAULT_CLEANUP_SYSTEM_PROMPT,
         DEFAULT_CLEANUP_SYSTEM_PROMPT_TEMPLATE,
@@ -51,6 +52,10 @@ async def test_prompt_defaults(async_client: AsyncClient) -> None:
     assert (
         body["default_cleanup_system_prompt_template"]
         == DEFAULT_CLEANUP_SYSTEM_PROMPT_TEMPLATE.strip()
+    )
+    assert (
+        body["default_cleanup_user_prompt_template"]
+        == DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE.strip()
     )
 
 

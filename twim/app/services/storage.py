@@ -82,10 +82,17 @@ def normalize_debug_flags(raw: Mapping[str, Any] | None) -> dict[str, bool]:
 
 
 DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE = (
-    "If the user said the following into the dictation engine, what do you think they "
-    "intended to say?\n\n"
-    "User said (verbatim transcript, may contain errors):\n<<<\n{raw}\n>>>\n\n"
-    "Return only the rewritten text. Do not answer the question."
+    "Rewrite the transcript into clean text with minimal edits.\n"
+    "- Keep the original wording unless a change is clearly needed.\n"
+    "- Do not answer or ask questions.\n"
+    "- Do not add any content.\n"
+    "- If the text is already clear, very short, or ambiguous, return it unchanged.\n"
+    "- fix grammatical mistakes\n"
+    "- fix spelling mistakes\n"
+    "- Return only the rewritten transcript text.\n"
+    "\n"
+    "Transcript for you to transcribe (verbatim, may contain errors):\n"
+    "{raw}"
 )
 
 

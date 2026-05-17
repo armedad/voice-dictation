@@ -79,7 +79,8 @@ class TestFormatDictationCleanupUserMessage:
     def test_default_template_wraps_raw(self) -> None:
         msg = format_dictation_cleanup_user_message("  hello world  ")
         assert "hello world" in msg
-        assert "<<<" in msg and ">>>" in msg
+        assert "Transcript for you to transcribe" in msg
+        assert "minimal edits" in msg
 
     def test_custom_template_appends_raw_placeholder(self) -> None:
         msg = format_dictation_cleanup_user_message_with_template(

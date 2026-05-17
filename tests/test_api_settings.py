@@ -26,6 +26,8 @@ async def test_get_settings_defaults(async_client: AsyncClient) -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["default_provider"] == "ollama"
+    assert body["default_model"] == "qwen2.5:3b-instruct"
+    assert "minimal edits" in (body.get("dictation_cleanup_user_prompt_template") or "")
     assert "debug_flags" in body
 
 

@@ -138,7 +138,10 @@
                             <p id="dictation-instructions-saved" class="dictation-instructions-saved" hidden>Saved.</p>
                         </div>
                         <div class="settings-section profile-dictation-template">
-                            <h3 class="settings-section-title">Dictation cleanup template</h3>
+                            <div class="section-title-row">
+                                <h3 class="settings-section-title">Dictation cleanup template</h3>
+                                <button type="button" id="dictation-cleanup-template-restore" class="btn-secondary">Restore default template</button>
+                            </div>
                             <p class="setting-hint">Template sent as the <strong>user message</strong> to the cleanup LLM. Use <code>{raw}</code> where the transcript should be inserted.</p>
                             <textarea id="dictation-cleanup-template" class="dictation-instructions-textarea" rows="8" placeholder="Use {raw} to insert the transcript."></textarea>
                             <p id="dictation-cleanup-template-saved" class="dictation-instructions-saved" hidden>Saved.</p>
@@ -160,11 +163,11 @@
                 <div class="context-grid">
                     <div class="context-column">
                         <div class="context-section context-base-section">
-                            <h2 class="context-section-title">Dictation cleanup — system prompt template</h2>
-                            <p class="setting-hint">Full system message sent to the cleanup LLM. Use placeholders <code>{{ vocabulary }}</code> (preferred terms block or <code>none</code>) and <code>{{ user preferences }}</code> (Dictation instructions body or <code>none</code>). Edit in Profile if you only change vocabulary or instructions there.</p>
-                            <div class="context-template-toolbar">
+                            <div class="section-title-row">
+                                <h2 class="context-section-title">Dictation cleanup — system prompt template</h2>
                                 <button type="button" id="dictation-context-system-template-restore" class="btn-secondary">Restore default template</button>
                             </div>
+                            <p class="setting-hint">Full system message sent to the cleanup LLM. Use placeholders <code>{{ vocabulary }}</code> (preferred terms block or <code>none</code>) and <code>{{ user preferences }}</code> (Dictation instructions body or <code>none</code>). Edit in Profile if you only change vocabulary or instructions there.</p>
                             <textarea id="dictation-context-system-prompt-template" class="dictation-instructions-textarea context-base-textarea" rows="14" placeholder="System prompt template with {{ vocabulary }} and {{ user preferences }}"></textarea>
                             <p id="dictation-context-system-template-saved" class="dictation-instructions-saved" hidden>Saved.</p>
                         </div>

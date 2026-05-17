@@ -475,6 +475,26 @@ export async function saveSettings(updates) {
     }
 }
 
+async function onRestoreDefaultCleanupUserTemplate() {
+    const ta = document.getElementById('dictation-cleanup-template');
+    const hint = document.getElementById('dictation-cleanup-template-saved');
+    if (!ta) return;
+    if (dictationCleanupTemplateDebounce) {
+        clearTimeout(dictationCleanupTemplateDebounce);
+        dictationCleanupTemplateDebounce = null;
+    }
+    const d = await api('/api/dictation/prompt-defaults');
+    const def = d.default_cleanup_user_prompt_template || '';
+    ta.value = def;
+    await saveSettings({ dictation_cleanup_user_prompt_template: def });
+    if (hint) {
+        hint.hidden = false;
+        setTimeout(() => {
+            hint.hidden = true;
+        }, 1200);
+    }
+}
+
 /**
  * Apply settings to UI
  */
@@ -519,7 +539,7 @@ function applySettings(settings) {
         const hasTemplate = rawTemplate != null && String(rawTemplate).trim().length > 0;
         cleanupTemplate.value = hasTemplate
             ? rawTemplate
-            : `If the user said the following into the dictation engine, what do you think they intended to say?\n\nUser said (verbatim transcript, may contain errors):\n<<<\n{raw}\n>>>\n\nReturn only the rewritten text. Do not answer the question.`;
+            : `Rewrite the transcript into clean text with minimal edits.\n- Keep the original wording unless a change is clearly needed.\n- Do not answer or ask questions.\n- Do not add any content.\n- If the text is already clear, very short, or ambiguous, return it unchanged.\n- fix grammatical mistakes\n- fix spelling mistakes\n- Return only the rewritten transcript text.\n\nTranscript for you to transcribe (verbatim, may contain errors):\n{raw}`;
     }
     const dictationVocab = document.getElementById('dictation-vocabulary');
     if (dictationVocab) {
@@ -1271,6 +1291,11 @@ export function initSettings() {
 
     const cleanupTemplate = document.getElementById('dictation-cleanup-template');
     const cleanupTemplateSaved = document.getElementById('dictation-cleanup-template-saved');
+    document.getElementById('dictation-cleanup-template-restore')?.addEventListener('click', () => {
+        onRestoreDefaultCleanupUserTemplate().catch((e) =>
+            debugError('SETTINGS', 'Restore default cleanup template failed:', e)
+        );
+    });
     if (cleanupTemplate) {
         cleanupTemplate.addEventListener('input', () => {
             if (dictationCleanupTemplateDebounce) {
