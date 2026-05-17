@@ -1,0 +1,16 @@
+{
+  "cases": [
+    {
+      "id": "hello",
+      "wav": "hello.wav",
+      "reference_transcript": "hello world",
+      "max_wer": 0.15
+    },
+    {
+      "id": "schedule",
+      "wav": "schedule.wav",
+      "reference_transcript": "schedule a meeting for tuesday at 3 p.m.",
+      "max_wer": 0.2
+    }
+  ]
+}
