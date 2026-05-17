@@ -421,9 +421,10 @@ async def _execute_dictation_from_text(
 
 @router.get("/dictation/prompt-defaults")
 async def dictation_prompt_defaults(request: Request) -> dict[str, str]:
-    """Built-in dictation cleanup prompts (Context tab restore / defaults)."""
+    """Built-in dictation cleanup prompts (Profile / Context tab restore defaults)."""
     if not request.cookies.get("twim_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
+    from app.services.storage import DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE
     from core.models import (
         DEFAULT_CLEANUP_SYSTEM_PROMPT,
         DEFAULT_CLEANUP_SYSTEM_PROMPT_TEMPLATE,
@@ -433,6 +434,9 @@ async def dictation_prompt_defaults(request: Request) -> dict[str, str]:
         "default_cleanup_base_prompt": DEFAULT_CLEANUP_SYSTEM_PROMPT.strip(),
         "default_cleanup_system_prompt_template": (
             DEFAULT_CLEANUP_SYSTEM_PROMPT_TEMPLATE.strip()
+        ),
+        "default_cleanup_user_prompt_template": (
+            DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE.strip()
         ),
     }
 
