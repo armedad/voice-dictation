@@ -12,7 +12,7 @@ import {
     initSettings,
     refreshDictationInputDevices,
 } from './settings.js';
-import { initChat, createConversation } from './chat.js';
+import { appendDictatedTextToChat, initChat, createConversation } from './chat.js';
 import { initNotifications, startNotificationStream, stopNotificationStream } from './notifications.js';
 import { startDictationEvents, stopDictationEvents } from './dictation-events.js';
 import {
@@ -184,10 +184,42 @@ function setupEventListeners() {
         await createConversation();
     });
 
+    document.getElementById('quit-app-btn')?.addEventListener('click', async () => {
+        if (
+            !confirm(
+                'Stop the voice dictation server and exit the combined app?\n\n(This ends start.bat / the process that launched run_combined_app.)'
+            )
+        ) {
+            return;
+        }
+        try {
+            const res = await fetch('/api/local/shutdown', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}',
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                const detail =
+                    typeof err.detail === 'string'
+                        ? err.detail
+                        : Array.isArray(err.detail)
+                          ? err.detail.map((d) => d.msg || d).join('; ')
+                          : res.statusText;
+                alert(detail || 'Quit is not available for this server launch.');
+                return;
+            }
+            document.getElementById('quit-app-btn').textContent = 'Stopping…';
+        } catch (e) {
+            alert(e?.message || String(e));
+        }
+    });
+
     const dictateBtn = document.getElementById('dictate-10s-btn');
     if (dictateBtn) {
         const defaultLabel = dictateBtn.textContent;
-        /** True while a record-and-type request is in flight (second click cancels mic capture). */
+        /** True while a record-and-type request is in flight (second click ends capture and runs STT). */
         let dictateSessionActive = false;
         dictateBtn.addEventListener('click', async () => {
             debugLog('DICTATION', 'dictate button clicked', {
@@ -196,15 +228,15 @@ function setupEventListeners() {
             });
             if (dictateSessionActive) {
                 try {
-                    debugLog('DICTATION', 'POST /api/dictation/hotkey/cancel (stop recording)');
-                    await api('dictation/hotkey/cancel', { method: 'POST', body: {} });
-                    debugLog('DICTATION', 'cancel API returned ok', {
+                    debugLog('DICTATION', 'POST /api/dictation/stop-recording (finish capture)');
+                    await api('dictation/stop-recording', { method: 'POST', body: {} });
+                    debugLog('DICTATION', 'stop-recording returned ok', {
                         dictateSessionActive,
                     });
                     dictateBtn.textContent = 'Stopping…';
                 } catch (e) {
-                    debugWarn('DICTATION', 'hotkey/cancel failed:', e?.message || e);
-                    debugWarn('DICTATION', 'cancel API failed', {
+                    debugWarn('DICTATION', 'stop-recording failed:', e?.message || e);
+                    debugWarn('DICTATION', 'stop-recording API failed', {
                         error: e?.message || String(e),
                     });
                     alert(e.message || 'Could not stop dictation');
@@ -225,6 +257,10 @@ function setupEventListeners() {
                 } else if (result.skipped_empty) {
                     dictateBtn.textContent = 'No speech detected';
                 } else {
+                    const t = (result.text && String(result.text).trim()) || '';
+                    if (t) {
+                        appendDictatedTextToChat(t);
+                    }
                     await refreshDictationLastContext({ resetToLatest: true });
                     dictateBtn.textContent = 'Done';
                 }

@@ -2,6 +2,8 @@
 # Launch twim (FastAPI + static UI): always via run_combined_app.py.
 # Runs stop.sh first to terminate any prior run_combined_app / uvicorn processes.
 #
+# Venv: CHEEAPPS_VENV, else first line of .voice_dictation_venv (from install.sh), else ./.venv.
+#
 # Usage:
 #   ./start.sh                      # macOS: uvicorn + hotkeys; else: API + --reload
 #   ./start.sh --port 8765          # or env VOICE_DICTATION_PORT
@@ -17,7 +19,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-PORT="${VOICE_DICTATION_PORT:-8000}"
+if [[ -n "${CHEEAPPS_VENV:-}" ]]; then
+  case "$CHEEAPPS_VENV" in
+    /*) VENV_DIR="$CHEEAPPS_VENV" ;;
+    *) VENV_DIR="$ROOT/$CHEEAPPS_VENV" ;;
+  esac
+elif [[ -f "$ROOT/.voice_dictation_venv" ]]; then
+  VENV_DIR="$(head -n 1 "$ROOT/.voice_dictation_venv" | tr -d '\r')"
+else
+  VENV_DIR="$ROOT/.venv"
+fi
+
+PORT="${VOICE_DICTATION_PORT:-8946}"
 RELOAD_ARGS=(--reload)
 SKIP_OLLAMA_ENSURE=false
 SKIP_HOTKEY_AGENT=false
@@ -93,9 +106,9 @@ ensure_ollama() {
   echo "warning: Ollama still not responding at ${base} after 30s — see $ROOT/logs/ollama-serve.log" >&2
 }
 
-VENV_PY="$ROOT/.venv/bin/python"
+VENV_PY="$VENV_DIR/bin/python"
 if [[ ! -x "$VENV_PY" ]]; then
-  echo "error: missing $VENV_PY — run ./install.sh first." >&2
+  echo "error: missing $VENV_PY — run ./install.sh first (optional: CHEEAPPS_VENV=/path/to/venv ./install.sh)." >&2
   exit 1
 fi
 
@@ -105,7 +118,7 @@ fi
 
 echo ""
 echo "==> Voice dictation MVP (twim)  http://127.0.0.1:${PORT}/"
-echo "    Entry: run_combined_app.py  |  venv: source \"$ROOT/.venv/bin/activate\""
+echo "    Entry: run_combined_app.py  |  venv: source \"$VENV_DIR/bin/activate\""
 echo "    Pipeline CLI: python dictation_cli.py record-once --seconds 4 --no-type"
 echo ""
 

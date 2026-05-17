@@ -113,6 +113,13 @@ export async function sendMessage(message, provider, model) {
 /**
  * Add a message to the UI
  */
+/** Append dictation result as a user message in the chat transcript (browser UI only). */
+export function appendDictatedTextToChat(text) {
+    const t = (text && String(text).trim()) || '';
+    if (!t) return;
+    addMessageToUI('user', t);
+}
+
 function addMessageToUI(role, content) {
     const messagesContainer = document.getElementById('messages');
     

@@ -12,7 +12,9 @@ import os
 import sys
 import threading
 from pathlib import Path
+
 from core.debug_flags_logging import log_system
+from core.default_twim_port import DEFAULT_TWIM_HTTP_PORT
 
 def _debug_emit(
     *,
@@ -35,8 +37,11 @@ def _debug_emit(
 
 
 def main() -> None:
+    # Enables POST /api/local/shutdown from the twim UI (loopback-only) to exit this process.
+    os.environ["VOICE_DICTATION_COMBINED_LAUNCHER"] = "1"
+
     p = argparse.ArgumentParser(description="Single-process Voice Dictation MVP launcher.")
-    p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--port", type=int, default=DEFAULT_TWIM_HTTP_PORT)
     p.add_argument(
         "--skip-hotkey-agent",
         action="store_true",

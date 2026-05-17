@@ -141,8 +141,10 @@ def _dictation_server_log(message: str, data: dict[str, Any] | None = None) -> N
 
 def _maybe_dictation_ui_sound(kind: str) -> None:
     """
-    Optional short OS chime when dictation recording starts (``start``) or when the
+    Optional short chime when dictation recording starts (``start``) or when the
     microphone capture phase ends (``end`` — before STT, cleanup, or typing).
+
+    macOS: ``afplay`` on Tink / Pop. Windows: short rising vs. falling ``winsound.Beep`` pair.
 
     Disable with ``VOICE_DICTATION_UI_SOUNDS=0``.
     """
@@ -171,10 +173,16 @@ def _maybe_dictation_ui_sound(kind: str) -> None:
             elif sys.platform == "win32":
                 import winsound
 
-                winsound.PlaySound(
-                    "SystemAsterisk" if kind == "start" else "SystemDefault",
-                    winsound.SND_ALIAS | winsound.SND_ASYNC,
-                )
+                # Ascending pair = "recording on"; descending pair = "mic off / capture done".
+                # (SystemAsterisk vs SystemDefault were easy to confuse; Beep is deterministic.)
+                if kind == "start":
+                    winsound.Beep(659, 42)
+                    time.sleep(0.022)
+                    winsound.Beep(988, 58)
+                else:
+                    winsound.Beep(784, 48)
+                    time.sleep(0.028)
+                    winsound.Beep(392, 110)
         except Exception:
             pass
 
@@ -963,9 +971,28 @@ async def dictation_hotkey_agent_status(request: Request) -> dict[str, Any]:
     }
 
 
+@router.post("/dictation/stop-recording")
+async def dictation_stop_recording(request: Request) -> dict[str, Any]:
+    """
+    End open-ended mic capture early and run STT/cleanup (same as a second hotkey toggle).
+
+    Requires login. Does **not** discard audio (unlike ``/dictation/hotkey/cancel``).
+    """
+    if not request.cookies.get("twim_session"):
+        raise HTTPException(status_code=401, detail="Not logged in")
+    if not _dictation_active:
+        return {"ok": False, "active": False}
+    _dictation_server_log(
+        "dictation stop-recording requested",
+        {"client": request.client.host if request.client else None},
+    )
+    _set_dictation_stop()
+    return {"ok": True, "active": True}
+
+
 @router.post("/dictation/hotkey/cancel")
 async def dictation_hotkey_cancel(request: Request) -> dict[str, Any]:
-    """Signal in-process dictation recording to stop (loopback-only)."""
+    """Abort in-process dictation recording without running STT (loopback-only)."""
     _require_loopback(request)
     _debug_emit(
         "app/routers/dictation.py:hotkey_cancel",
@@ -982,7 +1009,6 @@ async def dictation_hotkey_cancel(request: Request) -> dict[str, Any]:
         {"client": request.client.host if request.client else None},
     )
     _set_dictation_cancel()
-    _set_dictation_stop()
     _debug_emit(
         "app/routers/dictation.py:hotkey_cancel",
         "hotkey cancel flags set",

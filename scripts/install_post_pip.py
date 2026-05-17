@@ -75,6 +75,16 @@ def cmd_print_eval_ollama_models() -> int:
     return 0
 
 
+def _normalize_ollama_pull_name(raw: object, *, default: str = "llama3.2:3b") -> str:
+    """Single-line name safe for ``ollama pull`` (strip whitespace / CR; explicit tag avoids some 400s)."""
+    if raw is None:
+        return default
+    s = str(raw).replace("\r", "").replace("\n", " ").strip()
+    if not s:
+        return default
+    return s
+
+
 def cmd_print_ollama_cleanup_model() -> int:
     """Print cleanup model name to stdout only (for shell capture); no output if not Ollama."""
     root = _root()
@@ -83,7 +93,7 @@ def cmd_print_ollama_cleanup_model() -> int:
     prov = (c.get("provider") or "").lower().replace("-", "_")
     if prov not in ("ollama_chat", "ollama"):
         return 0
-    print(c.get("model") or "llama3.2", end="")
+    print(_normalize_ollama_pull_name(c.get("model"), default="llama3.2:3b"), end="")
     return 0
 
 

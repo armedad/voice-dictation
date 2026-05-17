@@ -1,7 +1,18 @@
 @echo off
-setlocal EnableExtensions
+REM Install script for voice-dictation (Windows)
+REM Uses CHEEAPPS_VENV: folder for the virtualenv (same convention as gauth). If unset, the
+REM path from .voice_dictation_venv is reused when present; otherwise you are prompted.
+REM Non-interactive: set CHEEAPPS_VENV before running, e.g.
+REM   set CHEEAPPS_VENV=C:\venvs\cheeapps-stack
+REM   install.bat
+REM Path is written to .voice_dictation_venv for start.bat.
+REM
+REM Capture parent env BEFORE setlocal — otherwise PowerShell/cmd may not pass
+REM CHEEAPPS_VENV into this script reliably after setlocal runs.
+
+set "CHEE_CAPTURE=%CHEEAPPS_VENV%"
+setlocal EnableDelayedExpansion EnableExtensions
 cd /d "%~dp0"
-set "INSTALL_ROOT=%CD%"
 set "ROOT=%CD%"
 
 rem --- defaults (mirror install.sh) ---
@@ -39,8 +50,9 @@ echo   install.bat --skip-ai-frame   ^(deprecated alias for --skip-twim^)
 echo   install.bat --with-spike
 echo   install.bat --recreate-venv
 echo.
-echo Env (optional, Whisper preload^):
-echo   VOICE_DICTATION_WHISPER_DEVICE   default cpu
+echo Env:
+echo   CHEEAPPS_VENV                    virtualenv directory ^(required if no console and no .voice_dictation_venv^)
+echo   VOICE_DICTATION_WHISPER_DEVICE   optional Whisper preload; default cpu
 echo   VOICE_DICTATION_WHISPER_COMPUTE  default int8
 exit /b 0
 
@@ -65,28 +77,63 @@ echo ==^> Using python on PATH (Python %PYVER%^)
 python -c "import sys; exit(0 if sys.version_info>=(3,10) else 1)" 2>nul
 if errorlevel 1 echo warning: Python ^< 3.10 may hit typing issues; 3.11+ recommended.
 
-if "%RECREATE_VENV%"=="1" if exist .venv (
-  echo ==^> Removing existing .venv ^(--recreate-venv^) ...
-  rmdir /s /q .venv
+if "!CHEE_CAPTURE!"=="" (
+  if exist ".voice_dictation_venv" (
+    for /f "usebackq delims=" %%i in (".voice_dictation_venv") do set "CHEE_CAPTURE=%%i"
+  )
 )
-
-if not exist .venv (
-  echo ==^> Creating venv .venv ...
-  py -3.13 -m venv .venv 2>nul
-  if not exist .venv\Scripts\python.exe py -3.12 -m venv .venv 2>nul
-  if not exist .venv\Scripts\python.exe py -3.11 -m venv .venv 2>nul
-  if not exist .venv\Scripts\python.exe python -m venv .venv
-  if not exist .venv\Scripts\python.exe (
-    echo error: could not create .venv. Try: py -3.13 -m venv .venv
+if "!CHEE_CAPTURE!"=="" (
+  python -c "import sys; raise SystemExit(0 if sys.stdin.isatty() else 1)" 2>nul
+  if errorlevel 1 (
+    echo Error: CHEEAPPS_VENV must be set when running non-interactively ^(no console input^).
+    echo Example: set CHEEAPPS_VENV=C:\venvs\cheeapps-stack
+    echo Or run from an interactive Command Prompt to enter the venv path when prompted.
+    pause
     exit /b 1
   )
-) else (
-  echo ==^> Reusing existing .venv ^(use --recreate-venv to start clean^) ...
+  set /p "CHEE_CAPTURE=Path for virtual environment (created if missing): "
+)
+set "GV=!CHEE_CAPTURE!"
+if "!GV!"=="" (
+  echo Error: path is required ^(set CHEEAPPS_VENV, reuse .voice_dictation_venv, or enter a path when prompted^).
+  pause
+  exit /b 1
+)
+for %%I in ("!GV!") do set "VENV_DIR=%%~fI"
+
+echo Virtual environment: !VENV_DIR!
+(echo !VENV_DIR!)> .voice_dictation_venv
+
+if "%RECREATE_VENV%"=="1" (
+  if exist "!VENV_DIR!\pyvenv.cfg" (
+    echo ==^> Removing existing venv ^(--recreate-venv^) at !VENV_DIR! ...
+    rmdir /s /q "!VENV_DIR!"
+  ) else if exist "!VENV_DIR!" (
+    echo error: --recreate-venv: directory exists but is not a Python venv ^(missing pyvenv.cfg^).
+    exit /b 1
+  )
 )
 
-call .venv\Scripts\activate.bat
+if exist "!VENV_DIR!\pyvenv.cfg" (
+  echo ==^> Using existing virtual environment.
+) else if exist "!VENV_DIR!" (
+  echo error: directory exists but is not a Python venv ^(missing pyvenv.cfg^).
+  exit /b 1
+) else (
+  echo ==^> Creating virtual environment...
+  py -3.13 -m venv "!VENV_DIR!" 2>nul
+  if not exist "!VENV_DIR!\Scripts\python.exe" py -3.12 -m venv "!VENV_DIR!" 2>nul
+  if not exist "!VENV_DIR!\Scripts\python.exe" py -3.11 -m venv "!VENV_DIR!" 2>nul
+  if not exist "!VENV_DIR!\Scripts\python.exe" python -m venv "!VENV_DIR!"
+  if not exist "!VENV_DIR!\Scripts\python.exe" (
+    echo error: could not create venv at !VENV_DIR!. Try: py -3.13 -m venv "!VENV_DIR!"
+    exit /b 1
+  )
+)
+
+call "!VENV_DIR!\Scripts\activate.bat"
 if errorlevel 1 (
-  echo error: failed to activate .venv\Scripts\activate.bat
+  echo error: failed to activate "!VENV_DIR!\Scripts\activate.bat"
   exit /b 1
 )
 
@@ -142,7 +189,8 @@ if not "%SKIP_OLLAMA%"=="1" (
 
 echo.
 echo ==^> Done.
-echo     Activate:  .venv\Scripts\activate.bat
+echo     Venv path saved in .voice_dictation_venv. Next time: set CHEEAPPS_VENV=!VENV_DIR! to skip the prompt.
+echo     Activate:  "!VENV_DIR!\Scripts\activate.bat"
 echo     Pipeline CLI: python dictation_cli.py record-once --seconds 4 --no-type
 echo     Settings:  start.bat from repo root ^(or run_combined_app.py / uvicorn per README^)
 echo     Config:    %USERPROFILE%\.voice-dictation\config.json ^(created on first agent run if missing^)
