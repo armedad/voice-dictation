@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
 # Voice dictation MVP — install AI eval / test harness (pytest, deepeval, jiwer, models).
 #
+# Uses CHEEAPPS_VENV: folder for the virtualenv (same convention as install.sh). If unset in an
+# interactive terminal, you are prompted. Non-interactive: set CHEEAPPS_VENV, e.g.
+#   CHEEAPPS_VENV="$HOME/venvs/cheeapps-stack" ./install-tests.sh
+# The resolved path is written to .voice_dictation_venv for ./start.sh.
+#
 # Windows: use install-tests.bat in this directory (same flags, shared scripts/install_post_pip.py).
 #
 # Does not start ollama serve (use the Ollama app or an existing server on port 11434).
 #
 # Usage:
-#   ./install-tests.sh                  # venv + dev/eval deps + whisper weights + ollama pull
-#   ./install-tests.sh --skip-ollama    # skip `ollama pull`
+#   ./install-tests.sh                  # venv + dev/eval deps + whisper weights + ollama pull (if missing)
+#   ./install-tests.sh --skip-ollama    # skip `ollama pull` (cleanup llama3.2:3b + judge qwen2.5:3b-instruct)
 #   ./install-tests.sh --skip-whisper   # skip faster-whisper weight download
-#   ./install-tests.sh --recreate-venv  # rm -rf .venv before creating
+#   ./install-tests.sh --recreate-venv  # remove existing venv at CHEEAPPS_VENV path, then recreate
 #
+# Env:
+#   CHEEAPPS_VENV                  virtualenv directory (required non-interactive; else prompted)
 # Env (optional, for Whisper preload):
 #   VOICE_DICTATION_WHISPER_DEVICE   default cpu
 #   VOICE_DICTATION_WHISPER_COMPUTE  default int8
@@ -30,7 +37,7 @@ for arg in "$@"; do
     --skip-whisper) SKIP_WHISPER=true ;;
     --recreate-venv) RECREATE_VENV=true ;;
     -h|--help)
-      sed -n '2,18p' "$0"
+      sed -n '2,26p' "$0"
       exit 0
       ;;
     *)
@@ -39,6 +46,34 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [[ -z "${CHEEAPPS_VENV:-}" ]]; then
+  if [[ ! -t 0 ]]; then
+    echo "CHEEAPPS_VENV must be set when running non-interactively (no TTY)." >&2
+    echo "Example: CHEEAPPS_VENV=\"\$HOME/venvs/cheeapps-stack\" $0" >&2
+    exit 1
+  fi
+  read -r -p "Path for virtual environment (created if missing): " CHEEAPPS_VENV
+fi
+
+CHEEAPPS_VENV="${CHEEAPPS_VENV#"${CHEEAPPS_VENV%%[![:space:]]*}"}"
+CHEEAPPS_VENV="${CHEEAPPS_VENV%"${CHEEAPPS_VENV##*[![:space:]]}"}"
+
+if [[ -z "$CHEEAPPS_VENV" ]]; then
+  echo "Error: path is required (set CHEEAPPS_VENV or enter a path when prompted)." >&2
+  exit 1
+fi
+
+case "$CHEEAPPS_VENV" in
+  /*) VENV_DIR="$CHEEAPPS_VENV" ;;
+  *) VENV_DIR="$ROOT/$CHEEAPPS_VENV" ;;
+esac
+
+mkdir -p "$(dirname "$VENV_DIR")"
+VENV_DIR="$(cd "$(dirname "$VENV_DIR")" && pwd)/$(basename "$VENV_DIR")"
+
+echo "Virtual environment: $VENV_DIR"
+printf '%s\n' "$VENV_DIR" >"$ROOT/.voice_dictation_venv"
 
 echo "==> Voice dictation test harness install (root: $ROOT)"
 
@@ -53,7 +88,7 @@ else
 fi
 
 if ! command -v "$PY" >/dev/null 2>&1; then
-  echo "error: need python3 (3.10+) on PATH" >&2
+  echo "error: need python3 (3.10+; prefers python3.13, then 3.12, then 3.11) on PATH" >&2
   exit 1
 fi
 
@@ -75,20 +110,28 @@ elif [[ "$(uname -s)" == "Darwin" ]]; then
   echo "warning: Homebrew not found. If sounddevice fails, install PortAudio." >&2
 fi
 
-if [[ "$RECREATE_VENV" == true ]] && [[ -d .venv ]]; then
-  echo "==> Removing existing .venv (--recreate-venv) ..."
-  rm -rf .venv
+if [[ "$RECREATE_VENV" == true ]]; then
+  if [[ -d "$VENV_DIR" ]] && [[ -f "$VENV_DIR/pyvenv.cfg" ]]; then
+    echo "==> Removing existing venv (--recreate-venv) at $VENV_DIR ..."
+    rm -rf "$VENV_DIR"
+  elif [[ -e "$VENV_DIR" ]]; then
+    echo "error: --recreate-venv: $VENV_DIR exists but is not a Python venv (missing pyvenv.cfg)." >&2
+    exit 1
+  fi
 fi
 
-if [[ ! -d .venv ]]; then
-  echo "==> Creating venv .venv ..."
-  "$PY" -m venv .venv
+if [[ -d "$VENV_DIR" ]] && [[ -f "$VENV_DIR/pyvenv.cfg" ]]; then
+  echo "==> Using existing virtual environment."
+elif [[ -e "$VENV_DIR" ]]; then
+  echo "error: $VENV_DIR exists but is not a Python venv (missing pyvenv.cfg)." >&2
+  exit 1
 else
-  echo "==> Reusing existing .venv (use --recreate-venv to start clean) ..."
+  echo "==> Creating virtual environment..."
+  "$PY" -m venv "$VENV_DIR"
 fi
 
 # shellcheck disable=SC1091
-source .venv/bin/activate
+source "$VENV_DIR/bin/activate"
 
 python -m pip install -U pip wheel setuptools
 
@@ -119,24 +162,33 @@ else
 fi
 
 if [[ "$SKIP_OLLAMA" != true ]] && command -v ollama >/dev/null 2>&1; then
-  echo "==> Pulling Ollama eval models (from evals/eval_config.json) ..."
-  while IFS= read -r model || [[ -n "${model:-}" ]]; do
-    [[ -z "${model:-}" ]] && continue
-    ollama pull "$model" || {
-      echo "warning: ollama pull $model failed (offline or wrong name?)." >&2
-    }
-  done < <(python "$ROOT/scripts/install_post_pip.py" print-eval-ollama-models)
+  echo "==> Ollama eval models (evals/eval_config.json: cleanup llama3.2:3b, judge qwen2.5:3b-instruct) ..."
+  PULL_LINES="$(python "$ROOT/scripts/install_post_pip.py" print-eval-ollama-models-to-pull || true)"
+  if [[ -z "${PULL_LINES//[$'\t\r\n ']/}" ]]; then
+    echo "==> Eval models already present (or Ollama unreachable — start Ollama and re-run to pull)."
+  else
+    while IFS=$'\t' read -r role model || [[ -n "${role:-}${model:-}" ]]; do
+      [[ -z "${model:-}" ]] && continue
+      label="${role:-eval}"
+      echo "==> Pulling ${model} (${label}) ..."
+      ollama pull "$model" || {
+        echo "warning: ollama pull $model failed (offline or wrong name?)." >&2
+      }
+    done <<<"$PULL_LINES"
+  fi
 elif [[ "$SKIP_OLLAMA" != true ]]; then
   echo "warning: ollama not on PATH; skipped model pull. Install from https://ollama.com" >&2
 fi
 
 echo ""
 echo "==> Done (test harness)."
-echo "    Activate:  source .venv/bin/activate"
+echo "    Path saved in .voice_dictation_venv. Next time: export CHEEAPPS_VENV=\"$VENV_DIR\" to skip the prompt."
+echo "    Activate:  source \"$VENV_DIR/bin/activate\""
+echo "    Full suite:  ./run-tests.sh"
 echo "    Unit tests:  pytest tests/ -q"
 echo "    Evals (all): pytest evals/ -q"
 echo "    STT only:    pytest evals/ -m slow -q"
 echo "    Cleanup:     pytest evals/ -m requires_ollama -q"
-echo "    GEval judge: VOICE_DICTATION_RUN_GEVAL=1 pytest evals/ -m geval_judge -q"
+echo "    Skip GEval:  ./run-tests.sh --skip-geval"
 echo "    Config:      evals/eval_config.json"
 echo "    Windows:     install-tests.bat"

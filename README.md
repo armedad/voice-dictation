@@ -76,31 +76,39 @@ First run creates **`~/.voice-dictation/config.json`** from the example file if 
 
 Local **STT** (WER via [jiwer](https://github.com/j-hyphen/jiwer)) and **cleanup** (rubrics via [DeepEval](https://github.com/confident-ai/deepeval) + Ollama judge). Config: [`evals/eval_config.json`](evals/eval_config.json).
 
-**One-shot install** (venv, pytest, deepeval, jiwer, Whisper weights, `ollama pull` for eval models). Does **not** start `ollama serve` — use the Ollama app or an existing server on port 11434.
+**Agents:** [`AGENTS.md`](AGENTS.md) (run commands, log paths). **Humans / detailed how-to:** [`adding-tests.md`](adding-tests.md).
+
+**One-shot install** (venv via `CHEEAPPS_VENV`, pytest, deepeval, jiwer, Whisper weights, `ollama pull` for eval models). Uses the same virtualenv convention as [`install.sh`](install.sh) (path saved in `.voice_dictation_venv`). Does **not** start `ollama serve` — use the Ollama app or an existing server on port 11434.
 
 ```bash
 cd "coding/voice-dictation-mvp"
-./install-tests.sh          # macOS / Linux
-install-tests.bat           # Windows
+CHEEAPPS_VENV="$HOME/venvs/cheeapps-stack" ./install-tests.sh   # macOS / Linux (or run ./install-tests.sh and enter path)
 ```
 
-Manual setup (equivalent):
+```bat
+cd coding\voice-dictation-mvp
+set CHEEAPPS_VENV=C:\venvs\cheeapps-stack
+install-tests.bat
+```
+
+Manual setup (equivalent; use the venv from `.voice_dictation_venv` or `CHEEAPPS_VENV`):
 
 ```bash
 cd "coding/voice-dictation-mvp"
-source .venv/bin/activate
+source "$(head -1 .voice_dictation_venv)/bin/activate"
 pip install -r requirements-dev.txt -r requirements-eval.txt
 # Ollama must already be running (app or one ollama serve on 11434)
 
-pytest tests/ -q                           # unit tests only (fast)
-pytest evals/ -m "not slow and not requires_ollama" -q   # (none by default)
-pytest evals/ -m slow -q                     # faster-whisper WER on fixture WAVs
-pytest evals/ -m requires_ollama -q          # cleanup deterministic gates (Ollama)
-pytest evals/ -q                             # STT + cleanup deterministic
-VOICE_DICTATION_RUN_GEVAL=1 pytest evals/ -m geval_judge -q   # optional GEval judge
+./run-tests.sh                               # full suite; logs to logs/test-runs/pytest-<timestamp>.{log,xml}
+./run-tests.sh --unit-only -q                # fast tests/ only (no Ollama)
+./run-tests.sh --skip-geval                  # skip DeepEval GEval judge (on by default)
+./run-tests.sh --skip-slow                   # skip faster-whisper WER cases
+./run-tests.sh --no-log                      # terminal only
+
+pytest evals/ -q                             # also errors if Ollama is not reachable
 ```
 
-Add STT clips under [`evals/cases/stt/`](evals/cases/stt/) and list them in `metadata.json`. Add cleanup scenarios as JSON under [`evals/cases/cleanup/`](evals/cases/cleanup/). Override models via `evals/eval_config.json` or `OLLAMA_HOST` / `OLLAMA_PORT`.
+Add cases and field reference: [`adding-tests.md`](adding-tests.md). STT audio: [`evals/cases/stt/`](evals/cases/stt/) + `metadata.json`. Cleanup: [`evals/cases/cleanup/`](evals/cases/cleanup/). GEval rubric: [`evals/geval_cleanup_criteria.json`](evals/geval_cleanup_criteria.json). Models: `evals/eval_config.json` or `OLLAMA_HOST` / `OLLAMA_PORT`.
 
 ## Debug Logging
 

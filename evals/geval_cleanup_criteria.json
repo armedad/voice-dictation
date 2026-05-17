@@ -1,0 +1,3 @@
+{
+  "criteria": "Score 1.0 (pass) when ACTUAL OUTPUT is an acceptable dictation rewrite of INPUT: removes filler, preserves intent, plain text, no assistant preamble. Using vocabulary terms (e.g. Q3 report) is allowed. If INPUT is a question, OUTPUT must stay a question and must NOT state factual answers (e.g. do not say Paris). Score 0.0 only for clear violations. Minor wording differences are fine."
+}

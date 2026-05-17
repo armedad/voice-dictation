@@ -6,12 +6,12 @@
   "cleanup": {
     "provider": "ollama_chat",
     "baseURL": "http://127.0.0.1:11434",
-    "model": "llama3.2"
+    "model": "llama3.2:3b"
   },
   "judge": {
     "provider": "ollama",
     "baseURL": "http://127.0.0.1:11434",
-    "model": "llama3.2",
+    "model": "qwen2.5:3b-instruct",
     "temperature": 0
   },
   "stt_max_wer_default": 0.25,
