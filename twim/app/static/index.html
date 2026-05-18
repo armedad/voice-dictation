@@ -403,6 +403,19 @@
                             <!-- Populated by JS -->
                         </div>
                     </div>
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">New user prompt defaults</h3>
+                        <p class="setting-hint">
+                            Writes the Context system prompt template and Profile dictation cleanup template
+                            (current textarea values) to shipped defaults for new users and fresh installs.
+                            Does not change existing accounts. Commit the updated JSON files to git if you want
+                            others to receive them.
+                        </p>
+                        <button type="button" class="btn-secondary" id="set-user-prompts-as-default">
+                            Set user prompts as default
+                        </button>
+                        <p id="set-user-prompts-as-default-status" class="setting-hint" hidden></p>
+                    </div>
                 </div>
             </div>
         </div>

@@ -1337,4 +1337,65 @@ export function initSettings() {
             renderDebugFlags();
         });
     }
+
+    const setDefaultsBtn = document.getElementById('set-user-prompts-as-default');
+    if (setDefaultsBtn) {
+        setDefaultsBtn.addEventListener('click', onSetUserPromptsAsDefault);
+    }
+}
+
+async function onSetUserPromptsAsDefault() {
+    const statusEl = document.getElementById('set-user-prompts-as-default-status');
+    const showStatus = (text, isError = false) => {
+        if (!statusEl) return;
+        statusEl.hidden = false;
+        statusEl.textContent = text;
+        statusEl.classList.toggle('error', isError);
+    };
+
+    const systemTa = document.getElementById('dictation-context-system-prompt-template');
+    const userTa = document.getElementById('dictation-cleanup-template');
+    if (!systemTa || !userTa) {
+        showStatus(
+            'Open Settings (Context and Profile tabs must be loaded) and try again.',
+            true
+        );
+        return;
+    }
+
+    const systemTemplate = systemTa.value;
+    const userTemplate = userTa.value;
+    if (!String(systemTemplate).trim() || !String(userTemplate).trim()) {
+        showStatus('Both prompt templates must be non-empty.', true);
+        return;
+    }
+
+    const ok = window.confirm(
+        'Set shipped new-user defaults from the current textarea values?\n\n' +
+            'This overwrites twim/users/_default/settings.json and ' +
+            'config/default-twim-settings.json on this machine. Existing user accounts are ' +
+            'not changed. Commit those files to git if you want others to get the same defaults.'
+    );
+    if (!ok) return;
+
+    const btn = document.getElementById('set-user-prompts-as-default');
+    if (btn) btn.disabled = true;
+    try {
+        const result = await api('/api/settings/default-prompt-templates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                dictation_cleanup_system_prompt_template: systemTemplate,
+                dictation_cleanup_user_prompt_template: userTemplate,
+            }),
+        });
+        const paths = (result.updated || []).join(', ');
+        showStatus(paths ? `Updated: ${paths}` : 'Defaults updated.');
+        debugLog('SETTINGS', 'Shipped default prompt templates updated', result);
+    } catch (e) {
+        debugError('SETTINGS', 'Set user prompts as default failed:', e);
+        showStatus((e && e.message) || 'Failed to update defaults.', true);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }

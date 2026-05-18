@@ -59,19 +59,12 @@ def cmd_prefetch_whisper_eval() -> int:
 
 
 def _eval_ollama_role_models(cfg: dict) -> list[tuple[str, str]]:
-    """(role, model) pairs for cleanup and judge; dedupe by model name (first role wins)."""
-    seen: set[str] = set()
-    roles: list[tuple[str, str]] = []
-    for key in ("cleanup", "judge"):
-        block = cfg.get(key) or {}
-        prov = (block.get("provider") or "").lower().replace("-", "_")
-        if prov not in ("ollama_chat", "ollama"):
-            continue
-        name = (block.get("model") or "").strip()
-        if name and name not in seen:
-            seen.add(name)
-            roles.append((key, name))
-    return roles
+    """(role, model) pairs: cleanup from TWIM default settings, judge from eval config."""
+    root = _root()
+    sys.path.insert(0, str(root))
+    from evals.helpers import eval_ollama_role_models
+
+    return eval_ollama_role_models(cfg)
 
 
 def cmd_print_eval_ollama_models() -> int:

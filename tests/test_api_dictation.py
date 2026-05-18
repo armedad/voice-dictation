@@ -39,24 +39,21 @@ async def test_prompt_defaults_requires_auth(async_client: AsyncClient) -> None:
 
 async def test_prompt_defaults(async_client: AsyncClient) -> None:
     await _register_with_model(async_client, cleanup_enabled=True)
-    from app.services.storage import DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE
-    from core.models import (
-        DEFAULT_CLEANUP_SYSTEM_PROMPT,
-        DEFAULT_CLEANUP_SYSTEM_PROMPT_TEMPLATE,
-    )
+    from app.services.storage import get_default_settings
+    from core.models import DEFAULT_CLEANUP_SYSTEM_PROMPT
 
+    shipped = get_default_settings()
     r = await async_client.get("/api/dictation/prompt-defaults")
     assert r.status_code == 200
     body = r.json()
     assert body["default_cleanup_base_prompt"] == DEFAULT_CLEANUP_SYSTEM_PROMPT.strip()
-    assert (
-        body["default_cleanup_system_prompt_template"]
-        == DEFAULT_CLEANUP_SYSTEM_PROMPT_TEMPLATE.strip()
-    )
-    assert (
-        body["default_cleanup_user_prompt_template"]
-        == DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE.strip()
-    )
+    assert body["default_cleanup_system_prompt_template"] == (
+        shipped.dictation_cleanup_system_prompt_template or ""
+    ).strip()
+    assert body["default_cleanup_user_prompt_template"] == (
+        shipped.dictation_cleanup_user_prompt_template or ""
+    ).strip()
+    assert "minimal edits" in body["default_cleanup_user_prompt_template"]
 
 
 async def test_cleanup_text_unauthenticated(async_client: AsyncClient) -> None:

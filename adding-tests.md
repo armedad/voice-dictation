@@ -63,10 +63,12 @@ Config: [`evals/eval_config.json`](evals/eval_config.json)
 | Role | Default model | Purpose |
 |------|----------------|--------|
 | Transcription | `base` (faster-whisper) | STT evals |
-| Cleanup (system under test) | `llama3.2:3b` | Rewrite dictation |
-| Judge (GEval only) | `qwen2.5:3b-instruct` | Score cleanup quality |
+| Cleanup (system under test) | TWIM default user (`get_default_settings()` → e.g. `qwen2.5:3b-instruct`) | Same model/path as new-user dictation |
+| Judge (GEval only) | `qwen2.5:3b-instruct` (`eval_config.json` → `judge`) | Score cleanup quality |
 
 Override `OLLAMA_HOST` / `OLLAMA_PORT` if needed. `./install-tests.sh` pulls missing Ollama models when the server is reachable.
+
+**Cleanup prompts (TWIM default user):** Evals call the same code as TWIM: `get_default_settings()` plus [`build_dictation_cleanup_prompts`](twim/app/services/dictation_cleanup_prompts.py) in [`evals/helpers.py`](evals/helpers.py). That uses shipped new-user templates from storage (not hardcoded eval fixtures). Per-case `vocabulary` / `user_instructions` in case JSON override the default user's Context fields for that story only. To change what evals and new users share, edit templates in the app, then **Settings → Debug → Set user prompts as default**, and commit `twim/users/_default/settings.json` (and `config/default-twim-settings.json`). Context/Profile **Restore default template** uses the same shipped templates via `GET /api/dictation/prompt-defaults`.
 
 ---
 
@@ -239,7 +241,7 @@ The judge is told to treat `expected_output` as the reference cleaned line (same
 ### Step 4 — Run tests
 
 1. Ollama running (`127.0.0.1:11434`).
-2. Models: `llama3.2:3b` (cleanup), `qwen2.5:3b-instruct` (judge). `./install-tests.sh` pulls missing tags.
+2. Models: TWIM default cleanup model (see `twim/users/_default/settings.json`, e.g. `qwen2.5:3b-instruct`) + `qwen2.5:3b-instruct` (judge). `./install-tests.sh` pulls missing tags.
 
 ```bash
 pytest evals/test_cleanup.py -k <your_id> -v
@@ -389,7 +391,7 @@ pytest tests/ evals/ -q
 - [ ] **GEval:** `skip_geval: false` unless judge-only checklist is enough
 - [ ] **GEval rubric:** edit `evals/geval_cleanup_criteria.json` and/or `geval_criteria_augment` on the case
 - [ ] **GEval golden line (optional):** `expected_output` if you want ACTUAL vs EXPECTED comparison
-- [ ] Ollama up; `llama3.2:3b` and `qwen2.5:3b-instruct` present (`ollama list`)
+- [ ] Ollama up; TWIM default cleanup model and judge model present (`ollama list`; see `evals/helpers.py` `eval_ollama_model_names()`)
 - [ ] Run `pytest evals/test_cleanup.py -k <id> -v`
 - [ ] Run `./run-tests.sh` before merge
 

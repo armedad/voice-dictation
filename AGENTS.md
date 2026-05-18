@@ -19,7 +19,7 @@ Instructions for AI agents working in this repo. **Do not duplicate** the full t
 **Prerequisites**
 
 1. Test harness installed once: `./install-tests.sh` (venv path in `.voice_dictation_venv` or `CHEEAPPS_VENV`).
-2. For `evals/`: Ollama running on `127.0.0.1:11434` with eval models (`llama3.2:3b`, `qwen2.5:3b-instruct`). `run-tests.sh` **exits with an error** if Ollama is down when evals are included.
+2. For `evals/`: Ollama running on `127.0.0.1:11434` with TWIM default cleanup model + judge (`evals/eval_config.json` → `judge`; cleanup from `get_default_settings()`). `run-tests.sh` **exits with an error** if Ollama is down when evals are included.
 
 **Default command**
 
