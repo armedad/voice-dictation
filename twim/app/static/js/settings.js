@@ -580,6 +580,22 @@ function savedDefaultModelComposite() {
 }
 
 /**
+ * Default model for shipped new-user JSON: Models tab select, else header, else saved settings.
+ * @returns {{ default_provider: string, default_model: string } | null}
+ */
+function selectedDefaultModelForShippedDefaults() {
+    const sel =
+        document.getElementById('default-model-select') ||
+        document.getElementById('model-select');
+    const composite = (sel && sel.value) || savedDefaultModelComposite();
+    if (!composite) return null;
+    const [provider, ...modelParts] = composite.split(':');
+    const model = modelParts.join(':').trim();
+    if (!provider || !model) return null;
+    return { default_provider: provider, default_model: model };
+}
+
+/**
  * Populate header / settings model selects from ``modelsCache`` and select ``defaultValue``.
  * When ``defaultValue`` is empty, selects an explicit placeholder (never a fake first model).
  */
@@ -1370,8 +1386,19 @@ async function onSetUserPromptsAsDefault() {
         return;
     }
 
+    const modelSelection = selectedDefaultModelForShippedDefaults();
+    if (!modelSelection) {
+        showStatus(
+            'Choose a default model in Settings → Models (or the header model menu) first.',
+            true
+        );
+        return;
+    }
+
     const ok = window.confirm(
-        'Set shipped new-user defaults from the current textarea values?\n\n' +
+        'Set shipped new-user defaults from the current UI?\n\n' +
+            '• Context + Profile prompt templates (textarea values)\n' +
+            `• Default model: ${modelSelection.default_provider}:${modelSelection.default_model}\n\n` +
             'This overwrites twim/users/_default/settings.json and ' +
             'config/default-twim-settings.json on this machine. Existing user accounts are ' +
             'not changed. Commit those files to git if you want others to get the same defaults.'
@@ -1387,10 +1414,15 @@ async function onSetUserPromptsAsDefault() {
             body: JSON.stringify({
                 dictation_cleanup_system_prompt_template: systemTemplate,
                 dictation_cleanup_user_prompt_template: userTemplate,
+                default_provider: modelSelection.default_provider,
+                default_model: modelSelection.default_model,
             }),
         });
         const paths = (result.updated || []).join(', ');
-        showStatus(paths ? `Updated: ${paths}` : 'Defaults updated.');
+        const modelLine = result.default_model
+            ? ` Default model: ${result.default_provider}:${result.default_model}.`
+            : '';
+        showStatus(paths ? `Updated: ${paths}.${modelLine}` : `Defaults updated.${modelLine}`);
         debugLog('SETTINGS', 'Shipped default prompt templates updated', result);
     } catch (e) {
         debugError('SETTINGS', 'Set user prompts as default failed:', e);

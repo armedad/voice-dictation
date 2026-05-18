@@ -101,7 +101,9 @@ def cmd_print_eval_ollama_models_to_pull() -> int:
     return 0
 
 
-def _normalize_ollama_pull_name(raw: object, *, default: str = "llama3.2:3b") -> str:
+def _normalize_ollama_pull_name(
+    raw: object, *, default: str = "qwen2.5:7b-instruct"
+) -> str:
     """Single-line name safe for ``ollama pull`` (strip whitespace / CR; explicit tag avoids some 400s)."""
     if raw is None:
         return default
@@ -119,7 +121,7 @@ def cmd_print_ollama_cleanup_model() -> int:
     prov = (c.get("provider") or "").lower().replace("-", "_")
     if prov not in ("ollama_chat", "ollama"):
         return 0
-    print(_normalize_ollama_pull_name(c.get("model"), default="llama3.2:3b"), end="")
+    print(_normalize_ollama_pull_name(c.get("model"), default="qwen2.5:7b-instruct"), end="")
     return 0
 
 

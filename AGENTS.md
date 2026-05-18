@@ -57,6 +57,8 @@ The script prints both paths at startup. **`logs/` is gitignored.**
 
 **Agents:** after a test run, read the **`.log`** file for failures (WER lines, substring assertions, GEval scores). Use the **`.xml`** only if you need structured pass/fail counts.
 
+**Explaining failures:** When summarizing a run for the user, list failed tests in **the same order as the log’s `FAILURES` section** (pytest execution/collection order — e.g. parametrized `test_cleanup[full_feature_example]` before `test_cleanup[plain_text_only]`). Do **not** re-sort by severity or “most important first” unless the user asks. That keeps explanations aligned line-by-line with the log while debugging.
+
 To disable file logging: `./run-tests.sh --no-log`.
 
 ## Adding or changing eval cases

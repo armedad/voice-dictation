@@ -24,6 +24,14 @@ def test_base_criteria_file_exists() -> None:
     assert GEVAL_CLEANUP_CRITERIA_PATH.is_file()
     base = load_geval_cleanup_base_criteria()
     assert "ACTUAL OUTPUT" in base
+    assert "direct copy" in base.lower() or "near-verbatim" in base.lower()
+
+
+def test_plain_text_only_criteria_allows_minimal_edit() -> None:
+    case = next(c for c in load_cleanup_cases() if c["id"] == "plain_text_only")
+    merged = build_geval_criteria_for_case(case)
+    assert "near-verbatim" in merged.lower()
+    assert "does not add value" in merged.lower()
 
 
 def test_build_geval_criteria_augment() -> None:
@@ -87,7 +95,7 @@ def test_load_base_criteria_rejects_empty(tmp_path: Path) -> None:
 
 
 def test_cleanup_failure_context_includes_full_verbatim_output() -> None:
-    from evals.test_cleanup import _cleanup_failure_context
+    from evals.helpers import format_cleanup_failure_context
 
     long_output = "x" * 400
     case = {
@@ -97,7 +105,7 @@ def test_cleanup_failure_context_includes_full_verbatim_output() -> None:
         "vocabulary": ["Q3"],
         "user_instructions": "Use formal tone.",
     }
-    ctx = _cleanup_failure_context(case, long_output)
+    ctx = format_cleanup_failure_context(case, long_output)
     assert long_output in ctx
     assert "cleanup actual_output (verbatim)" in ctx
     assert "um hello world" in ctx

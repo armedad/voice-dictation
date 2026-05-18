@@ -13,6 +13,28 @@ class OllamaError(Exception):
         super().__init__(self.message)
 
 
+def has_model_sync(url: str, model_name: str, timeout: float = 2.0) -> bool:
+    """True if ``/api/tags`` lists ``model_name`` (exact name or ``name:tag`` prefix)."""
+    want = (model_name or "").strip().lower()
+    if not want:
+        return False
+    base = (url or "").rstrip("/")
+    if not base:
+        return False
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            response = client.get(f"{base}/api/tags")
+            response.raise_for_status()
+            tags = response.json()
+    except (httpx.HTTPError, OSError, ValueError):
+        return False
+    for entry in tags.get("models") or []:
+        name = str(entry.get("name") or "").lower()
+        if name == want or name.startswith(f"{want}:"):
+            return True
+    return False
+
+
 async def list_models(url: str) -> list[dict]:
     """Get list of available models from Ollama."""
     try:
