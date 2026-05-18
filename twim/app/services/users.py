@@ -2,9 +2,10 @@
 import json
 import os
 from pathlib import Path
-from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
+
+from .time_utils import utc_now_iso_z
 
 # Users directory
 PROJECT_DIR = Path(__file__).parent.parent.parent
@@ -71,7 +72,7 @@ def create_user(username: str, password: str, display_name: str) -> Optional[Use
         username=username,
         password=password,
         display_name=display_name,
-        created_at=datetime.utcnow().isoformat() + "Z"
+        created_at=utc_now_iso_z()
     )
     
     config.users[username] = user
