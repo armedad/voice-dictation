@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from datetime import datetime
 import secrets
 from typing import Any, Optional, Mapping
 from uuid import uuid4
 from pydantic import BaseModel, Field
 
+from .time_utils import utc_now_iso_z
 from .users import USERS_DIR
 
 
@@ -229,7 +229,7 @@ class UserDataStore:
                            model: Optional[str] = None) -> Conversation:
         """Create a new conversation."""
         self.ensure_dirs()
-        now = datetime.utcnow().isoformat() + "Z"
+        now = utc_now_iso_z()
         conversation = Conversation(
             id=str(uuid4()),
             title=title,
@@ -263,7 +263,7 @@ class UserDataStore:
             conversation.provider = provider
         if model is not None:
             conversation.model = model
-        conversation.updated_at = datetime.utcnow().isoformat() + "Z"
+        conversation.updated_at = utc_now_iso_z()
         self.save_conversation(conversation)
         return conversation
     
@@ -288,7 +288,7 @@ class UserDataStore:
             content=content,
             model=model,
             provider=provider,
-            timestamp=datetime.utcnow().isoformat() + "Z"
+            timestamp=utc_now_iso_z()
         )
         conversation.messages.append(message)
         conversation.updated_at = message.timestamp
@@ -501,7 +501,7 @@ class UserDataStore:
                         details: Optional[str] = None) -> Notification:
         """Add a notification and return it."""
         notifications = self.get_notifications()
-        now = datetime.utcnow().isoformat() + "Z"
+        now = utc_now_iso_z()
         notif = Notification(
             id=str(uuid4()),
             type=notif_type,
