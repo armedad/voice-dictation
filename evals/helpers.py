@@ -5,20 +5,34 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
 import httpx
 
-from core.models import (
-    AdapterEndpoint,
-    format_dictation_cleanup_user_message_with_template,
-    render_dictation_cleanup_system_prompt,
-)
-from core.orchestrator import run_pipeline
-
 EVALS_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = EVALS_ROOT.parent
+
+
+def _ensure_import_paths() -> None:
+    """Match pytest.ini ``pythonpath = . twim`` for ``python -c`` / install scripts."""
+    for sub in ("", "twim"):
+        p = str((PROJECT_ROOT / sub) if sub else PROJECT_ROOT)
+        if p not in sys.path:
+            sys.path.insert(0, p)
+
+
+_ensure_import_paths()
+
+from app.services.dictation_cleanup_prompts import (
+    DictationCleanupPrompts,
+    build_dictation_cleanup_prompts,
+)
+from app.services.storage import DEFAULT_DATA_DIR, get_default_settings
+from core.models import AdapterEndpoint
+from core.orchestrator import run_pipeline
 
 
 def load_eval_config() -> dict[str, Any]:
@@ -57,17 +71,47 @@ def ollama_has_model(model_name: str, timeout: float = 2.0) -> bool:
     return False
 
 
-def eval_ollama_model_names(cfg: Optional[dict[str, Any]] = None) -> list[str]:
-    """Unique cleanup + judge model names from eval config."""
-    c = cfg or load_eval_config()
-    names: list[str] = []
-    for key in ("cleanup", "judge"):
-        block = c.get(key) or {}
-        prov = (block.get("provider") or "").lower().replace("-", "_")
-        if prov not in ("ollama_chat", "ollama"):
-            continue
+def resolve_cleanup_for_eval() -> tuple[AdapterEndpoint, Optional[str]]:
+    """
+    Cleanup endpoint for evals: same as TWIM dictation (default-user Settings).
+
+    Uses ``get_default_settings()`` + ``build_cleanup_endpoint`` — not ``eval_config.json``.
+    """
+    from app.services.dictation_cleanup import build_cleanup_endpoint
+
+    settings = get_default_settings()
+    return build_cleanup_endpoint(settings, DEFAULT_DATA_DIR)
+
+
+def eval_ollama_role_models(cfg: Optional[dict[str, Any]] = None) -> list[tuple[str, str]]:
+    """``(role, model)`` pairs: cleanup from TWIM defaults, judge from eval config."""
+    seen: set[str] = set()
+    roles: list[tuple[str, str]] = []
+    try:
+        ep, _key = resolve_cleanup_for_eval()
+        prov = (ep.provider or "").lower().replace("-", "_")
+        if prov in ("ollama_chat", "ollama"):
+            name = (ep.model_name or "").strip()
+            if name and name not in seen:
+                seen.add(name)
+                roles.append(("cleanup", name))
+    except ValueError:
+        pass
+
+    block = (cfg or load_eval_config()).get("judge") or {}
+    prov = (block.get("provider") or "").lower().replace("-", "_")
+    if prov in ("ollama_chat", "ollama"):
         name = (block.get("model") or "").strip()
-        if name and name not in names:
+        if name and name not in seen:
+            roles.append(("judge", name))
+    return roles
+
+
+def eval_ollama_model_names(cfg: Optional[dict[str, Any]] = None) -> list[str]:
+    """Unique Ollama model names required for cleanup (TWIM default) + judge (eval config)."""
+    names: list[str] = []
+    for _role, name in eval_ollama_role_models(cfg):
+        if name not in names:
             names.append(name)
     return names
 
@@ -94,7 +138,7 @@ def ollama_eval_prereq_error() -> Optional[str]:
         return (
             f"Ollama at {base} is up but required eval model(s) are missing: {', '.join(missing)}.\n"
             f"Pull them with: {pulls}\n"
-            "(Models are listed in evals/eval_config.json; install-tests.sh can pull them.)"
+            "(Cleanup uses TWIM default model from get_default_settings(); judge uses evals/eval_config.json. install-tests.sh can pull them.)"
         )
     return None
 
@@ -117,14 +161,10 @@ def transcription_endpoint(cfg: Optional[dict[str, Any]] = None) -> AdapterEndpo
 
 
 def cleanup_endpoint(cfg: Optional[dict[str, Any]] = None) -> AdapterEndpoint:
-    c = cfg or load_eval_config()
-    clean = c["cleanup"]
-    base = (clean.get("baseURL") or "").strip() or ollama_base_url()
-    return AdapterEndpoint(
-        provider=clean.get("provider", "ollama_chat"),
-        baseURL=base,
-        model=clean.get("model", "llama3.2:3b"),
-    )
+    """TWIM default-user cleanup model/URL (``cfg`` ignored; judge still uses eval_config)."""
+    del cfg  # noqa: ARG001 — signature kept for existing call sites
+    ep, _openai_key = resolve_cleanup_for_eval()
+    return ep
 
 
 def judge_model_name(cfg: Optional[dict[str, Any]] = None) -> str:
@@ -167,46 +207,124 @@ async def run_stt_only(
     )
 
 
+def build_cleanup_prompts_for_case(case: dict[str, Any]) -> DictationCleanupPrompts:
+    """Rendered cleanup LLM prompts for an eval case (TWIM default-user templates)."""
+    defaults = get_default_settings()
+    return build_dictation_cleanup_prompts(
+        defaults,
+        case["raw_transcript"],
+        vocabulary_override=case.get("vocabulary"),
+        user_instructions_override=case.get("user_instructions"),
+    )
+
+
+def format_cleanup_failure_context(
+    case: dict[str, Any],
+    output: str,
+    *,
+    prompts: Optional[DictationCleanupPrompts] = None,
+    cleanup_endpoint: Optional[AdapterEndpoint] = None,
+) -> str:
+    """Full verbatim strings for pytest logs (no truncation)."""
+    expected = case_expected_output(case)
+    lines: list[str] = []
+    if cleanup_endpoint is not None:
+        lines.extend(
+            [
+                "--- cleanup LLM (TWIM default model) ---",
+                f"provider: {cleanup_endpoint.provider}",
+                f"model: {cleanup_endpoint.model_name}",
+                f"baseURL: {cleanup_endpoint.baseURL or ''}",
+            ]
+        )
+    lines.extend(
+        [
+        "--- cleanup LLM system_prompt (verbatim) ---",
+        (prompts.system_prompt if prompts is not None else "(not captured)"),
+        "--- cleanup LLM user_prompt (verbatim) ---",
+        (prompts.user_prompt_for_transcript if prompts is not None else "(not captured)"),
+        "--- raw_transcript (INPUT) ---",
+        case["raw_transcript"],
+        "--- cleanup actual_output (verbatim) ---",
+        output,
+        ]
+    )
+    if expected is not None:
+        lines.extend(["--- expected_output (golden) ---", expected])
+    vocab = case.get("vocabulary")
+    if vocab:
+        lines.extend(["--- vocabulary ---", str(vocab)])
+    instructions = case.get("user_instructions")
+    if instructions:
+        lines.extend(["--- user_instructions ---", str(instructions)])
+    return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class CleanupRunResult:
+    """Cleanup model output, prompts, and TWIM default cleanup endpoint used."""
+
+    output: str
+    prompts: DictationCleanupPrompts
+    cleanup_endpoint: AdapterEndpoint
+
+
 async def run_cleanup_only(
     raw_transcript: str,
     *,
     cfg: Optional[dict[str, Any]] = None,
     vocabulary: Optional[str] = None,
     user_instructions: Optional[str] = None,
-    cleanup_user_prompt_template: Optional[str] = None,
+    system_template_override: Optional[str] = None,
+    user_template_override: Optional[str] = None,
 ) -> str:
-    system_prompt = render_dictation_cleanup_system_prompt(
-        None,
-        vocabulary=vocabulary,
-        user_instructions=user_instructions,
+    """Run cleanup using TWIM default-user templates via ``get_default_settings()``."""
+    defaults = get_default_settings()
+    prompts = build_dictation_cleanup_prompts(
+        defaults,
+        raw_transcript,
+        vocabulary_override=vocabulary,
+        user_instructions_override=user_instructions,
+        system_template_override=system_template_override,
+        user_template_override=user_template_override,
     )
-    user_builder = (
-        lambda raw: format_dictation_cleanup_user_message_with_template(
-            raw, cleanup_user_prompt_template
-        )
-    )
-    return await run_pipeline(
+    clean_ep, openai_key = resolve_cleanup_for_eval()
+    output = await run_pipeline(
         b"",
         "dictation.txt",
-        cleanup_endpoint=cleanup_endpoint(cfg),
-        cleanup_system_prompt=system_prompt,
-        cleanup_user_prompt_builder=user_builder,
+        cleanup_endpoint=clean_ep,
+        cleanup_openai_api_key=openai_key,
+        cleanup_system_prompt=prompts.system_prompt,
+        cleanup_user_prompt=prompts.user_prompt_for_transcript,
         skip_llm_cleanup=False,
         raw_transcript_override=raw_transcript,
     )
+    return output
 
 
 async def run_cleanup_for_case(
     case: dict[str, Any],
     *,
     cfg: Optional[dict[str, Any]] = None,
-) -> str:
-    """Run cleanup for one eval case dict (``raw_transcript``, vocabulary, user_instructions)."""
-    return await run_cleanup_only(
-        case["raw_transcript"],
-        cfg=cfg,
-        vocabulary=case.get("vocabulary"),
-        user_instructions=case.get("user_instructions"),
+) -> CleanupRunResult:
+    """Run cleanup for one eval case; returns output and prompts sent to the cleanup LLM."""
+    del cfg  # noqa: ARG001 — cleanup model from TWIM defaults; judge may use eval_config elsewhere
+    prompts = build_cleanup_prompts_for_case(case)
+    clean_ep, openai_key = resolve_cleanup_for_eval()
+    output = await run_pipeline(
+        b"",
+        "dictation.txt",
+        cleanup_endpoint=clean_ep,
+        cleanup_openai_api_key=openai_key,
+        cleanup_system_prompt=prompts.system_prompt,
+        cleanup_user_prompt=prompts.user_prompt_for_transcript,
+        skip_llm_cleanup=False,
+        raw_transcript_override=case["raw_transcript"],
+    )
+    return CleanupRunResult(
+        output=output,
+        prompts=prompts,
+        cleanup_endpoint=clean_ep,
     )
 
 

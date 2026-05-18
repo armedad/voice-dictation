@@ -162,7 +162,7 @@ else
 fi
 
 if [[ "$SKIP_OLLAMA" != true ]] && command -v ollama >/dev/null 2>&1; then
-  echo "==> Ollama eval models (evals/eval_config.json: cleanup llama3.2:3b, judge qwen2.5:3b-instruct) ..."
+  echo "==> Ollama eval models (TWIM default cleanup + eval judge from eval_config.json) ..."
   PULL_LINES="$(python "$ROOT/scripts/install_post_pip.py" print-eval-ollama-models-to-pull || true)"
   if [[ -z "${PULL_LINES//[$'\t\r\n ']/}" ]]; then
     echo "==> Eval models already present (or Ollama unreachable — start Ollama and re-run to pull)."
