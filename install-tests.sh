@@ -12,7 +12,7 @@
 #
 # Usage:
 #   ./install-tests.sh                  # venv + dev/eval deps + whisper weights + ollama pull (if missing)
-#   ./install-tests.sh --skip-ollama    # skip `ollama pull` (cleanup llama3.2:3b + judge qwen2.5:3b-instruct)
+#   ./install-tests.sh --skip-ollama    # skip `ollama pull` (cleanup qwen2.5:7b-instruct + judge llama3.1:8b)
 #   ./install-tests.sh --skip-whisper   # skip faster-whisper weight download
 #   ./install-tests.sh --recreate-venv  # remove existing venv at CHEEAPPS_VENV path, then recreate
 #

@@ -6,7 +6,7 @@
   "judge": {
     "provider": "ollama",
     "baseURL": "http://127.0.0.1:11434",
-    "model": "qwen2.5:3b-instruct",
+    "model": "llama3.1:8b",
     "temperature": 0
   },
   "stt_max_wer_default": 0.25,

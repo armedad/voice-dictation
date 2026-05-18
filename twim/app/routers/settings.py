@@ -73,6 +73,8 @@ def get_user_store(request: Request) -> UserDataStore:
 class DefaultPromptTemplatesRequest(BaseModel):
     dictation_cleanup_system_prompt_template: str
     dictation_cleanup_user_prompt_template: str
+    default_model: str
+    default_provider: str
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -108,7 +110,7 @@ async def set_default_prompt_templates(
     request: Request, req: DefaultPromptTemplatesRequest
 ) -> dict[str, Any]:
     """
-    Copy cleanup prompt templates into shipped new-user defaults.
+    Copy cleanup prompt templates and default LLM into shipped new-user defaults.
 
     Updates ``twim/users/_default/settings.json`` and
     ``config/default-twim-settings.json``. Does not change the caller's user settings.
@@ -121,14 +123,16 @@ async def set_default_prompt_templates(
     )
 
     try:
-        updated = update_shipped_default_prompt_templates(
+        result = update_shipped_default_prompt_templates(
             req.dictation_cleanup_system_prompt_template,
             req.dictation_cleanup_user_prompt_template,
+            default_model=req.default_model,
+            default_provider=req.default_provider,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    return {"ok": True, "updated": updated}
+    return {"ok": True, **result}
 
 
 @router.patch("/settings")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -52,6 +53,9 @@ def twim_api_env(tmp_path, monkeypatch):
     logs = tmp_path / "logs"
     users.mkdir()
     logs.mkdir()
+    shipped_default = ROOT / "twim" / "users" / "_default"
+    if shipped_default.is_dir():
+        shutil.copytree(shipped_default, users / "_default")
     monkeypatch.setenv("TWIM_USERS_DIR", str(users))
     monkeypatch.setenv("TWIM_LOGS_DIR", str(logs))
     monkeypatch.setenv("TWIM_QUIET_STARTUP", "1")

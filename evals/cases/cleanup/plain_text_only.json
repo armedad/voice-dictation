@@ -7,5 +7,5 @@
   "expected_not_contains": ["```", "**", "# "],
   "min_geval_score": 0.5,
   "skip_geval": false,
-  "geval_criteria_augment": "OUTPUT must be plain text only: no markdown headings, bold, code fences, or bullet lists."
+  "geval_criteria_augment": "OUTPUT must be plain text only: no markdown headings, bold, code fences, or bullet lists. INPUT is already clear: score 1.0 if ACTUAL OUTPUT keeps the same meaning with at most sentence case and/or terminal punctuation (e.g. adding a period). Do not fail for near-verbatim output or 'does not add value'."
 }

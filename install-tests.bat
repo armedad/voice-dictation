@@ -155,7 +155,7 @@ if not "%SKIP_OLLAMA%"=="1" (
   if errorlevel 1 (
     echo warning: ollama not on PATH; skipped model pull. Install from https://ollama.com
   ) else (
-    echo ==^> Ollama eval models ^(evals\eval_config.json: cleanup llama3.2:3b, judge qwen2.5:3b-instruct^) ...
+    echo ==^> Ollama eval models ^(TWIM default cleanup qwen2.5:7b-instruct + judge llama3.1:8b^) ...
     set "PULL_ANY=0"
     for /f "usebackq tokens=1,2 delims=	" %%a in (`python "%ROOT%\scripts\install_post_pip.py" print-eval-ollama-models-to-pull`) do (
       set "PULL_ANY=1"

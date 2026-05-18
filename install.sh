@@ -180,16 +180,26 @@ if [[ "$SKIP_WHISPER" != true ]]; then
 fi
 
 if [[ "$SKIP_OLLAMA" != true ]] && command -v ollama >/dev/null 2>&1; then
-  echo "==> Pulling Ollama cleanup model (from config/example-model-settings.json) ..."
+  echo "==> Ollama models (agent cleanup from example config + TWIM default cleanup + eval judge) ..."
   OLLAMA_MODEL="$(
     python "$ROOT/scripts/install_post_pip.py" print-ollama-cleanup-model
   )"
   if [[ -n "${OLLAMA_MODEL:-}" ]]; then
+    echo "==> Pulling ${OLLAMA_MODEL} (agent example config cleanup) ..."
     ollama pull "$OLLAMA_MODEL" || {
-      echo "warning: ollama pull failed (offline or model name wrong?). Fix cleanup.model in config and run: ollama pull <name>" >&2
+      echo "warning: ollama pull $OLLAMA_MODEL failed (offline or wrong name?)." >&2
     }
-  else
-    echo "==> Skipping ollama pull (cleanup.provider is not ollama_chat in example config)."
+  fi
+  PULL_LINES="$(python "$ROOT/scripts/install_post_pip.py" print-eval-ollama-models-to-pull || true)"
+  if [[ -n "${PULL_LINES//[$'\t\r\n ']/}" ]]; then
+    while IFS=$'\t' read -r role model || [[ -n "${role:-}${model:-}" ]]; do
+      [[ -z "${model:-}" ]] && continue
+      label="${role:-eval}"
+      echo "==> Pulling ${model} (${label}) ..."
+      ollama pull "$model" || {
+        echo "warning: ollama pull $model failed (offline or wrong name?)." >&2
+      }
+    done <<<"$PULL_LINES"
   fi
 elif [[ "$SKIP_OLLAMA" != true ]]; then
   echo "warning: ollama not on PATH; skipped model pull. Install from https://ollama.com" >&2

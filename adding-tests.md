@@ -210,7 +210,7 @@ On the **case** JSON:
 | `geval_criteria_augment` | Extra sentences **appended** to the shared rubric (usual way to specialize one story). |
 | `geval_criteria` | **Replace** the shared rubric for this case only (rare). `geval_criteria_augment` still appends if set. |
 
-**Example:** `plain_text_only.json` uses `geval_criteria_augment` for “plain text only, no markdown.”
+**Example:** `plain_text_only.json` uses `geval_criteria_augment` for plain text only and to allow near-verbatim output when INPUT is already clear (sentence case / punctuation only).
 
 #### 3c — Golden answer for the judge (optional)
 

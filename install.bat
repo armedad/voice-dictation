@@ -176,13 +176,21 @@ if not "%SKIP_OLLAMA%"=="1" (
   if errorlevel 1 (
     echo warning: ollama not on PATH; skipped model pull. Install from https://ollama.com
   ) else (
-    echo ==^> Pulling Ollama cleanup model (from config\example-model-settings.json^) ...
+    echo ==^> Ollama models ^(agent example cleanup + TWIM default cleanup + eval judge^) ...
     set "OLLAMA_MODEL="
     for /f "usebackq delims=" %%m in (`python "%ROOT%\scripts\install_post_pip.py" print-ollama-cleanup-model`) do set "OLLAMA_MODEL=%%m"
     if defined OLLAMA_MODEL (
-      ollama pull "%OLLAMA_MODEL%" || echo warning: ollama pull failed.
-    ) else (
-      echo ==^> Skipping ollama pull ^(cleanup.provider is not ollama_chat in example config.^)
+      echo ==^> Pulling !OLLAMA_MODEL! ^(agent example config cleanup^) ...
+      ollama pull "!OLLAMA_MODEL!" || echo warning: ollama pull !OLLAMA_MODEL! failed.
+    )
+    set "PULL_ANY=0"
+    for /f "usebackq tokens=1,2 delims=	" %%a in (`python "%ROOT%\scripts\install_post_pip.py" print-eval-ollama-models-to-pull`) do (
+      set "PULL_ANY=1"
+      echo ==^> Pulling %%b ^(%%a^) ...
+      ollama pull "%%b" || echo warning: ollama pull %%b failed.
+    )
+    if "!PULL_ANY!"=="0" if not defined OLLAMA_MODEL (
+      echo ==^> No Ollama models configured to pull.
     )
   )
 )

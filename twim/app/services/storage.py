@@ -109,9 +109,28 @@ def normalize_url(url: str) -> str:
     return url
 
 
+def require_default_model(settings: Settings, *, source: str = "settings") -> None:
+    """
+    Require ``default_model`` from shipped/user settings — no hardcoded model fallback.
+
+    Raises:
+        ValueError: when ``default_model`` is missing or blank.
+    """
+    if (settings.default_model or "").strip():
+        return
+    raise ValueError(
+        f"default_model is not set in {source}. "
+        "Set default_model (and default_provider) in twim/users/_default/settings.json "
+        "and config/default-twim-settings.json for new users."
+    )
+
+
 def get_default_settings() -> Settings:
     """Load default settings from _default/settings.json if it exists."""
-    default_file = USERS_DIR / "_default" / "settings.json"
+    # Resolve at call time so tests (TWIM_USERS_DIR / monkeypatch) see the active users dir.
+    from . import users
+
+    default_file = users.USERS_DIR / "_default" / "settings.json"
     if default_file.exists():
         try:
             with open(default_file, "r", encoding="utf-8") as f:
@@ -126,13 +145,18 @@ def get_default_settings() -> Settings:
                 defaults.dictation_cleanup_system_prompt_template = (
                     _default_dictation_cleanup_system_prompt_template()
                 )
+            defaults.ollama_url = normalize_url(defaults.ollama_url)
+            require_default_model(
+                defaults, source=f"twim/users/_default/settings.json ({default_file})"
+            )
             return defaults
+        except ValueError:
+            raise
         except (json.JSONDecodeError, Exception):
             pass
-    return Settings(
-        dictation_cleanup_system_prompt_template=_default_dictation_cleanup_system_prompt_template(),
-        dictation_cleanup_user_prompt_template=DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE,
-        debug_flags=dict(DEBUG_FLAG_DEFAULTS),
+    raise ValueError(
+        f"Missing or invalid shipped defaults at {default_file}. "
+        "Provide twim/users/_default/settings.json with default_model and default_provider."
     )
 
 
@@ -281,7 +305,9 @@ class UserDataStore:
         defaults = get_default_settings()
         
         if not self.settings_file.exists():
-            # No user settings - use defaults
+            defaults.ollama_url = normalize_url(defaults.ollama_url)
+            defaults.lm_studio_url = normalize_url(defaults.lm_studio_url)
+            require_default_model(defaults, source="shipped default settings")
             return defaults
         
         # Load user settings
@@ -317,7 +343,8 @@ class UserDataStore:
         # Normalize URLs
         settings.ollama_url = normalize_url(settings.ollama_url)
         settings.lm_studio_url = normalize_url(settings.lm_studio_url)
-        
+        require_default_model(settings, source=f"user settings ({self.settings_file})")
+
         return settings
     
     def save_settings(self, settings: Settings):

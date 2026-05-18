@@ -169,7 +169,7 @@ def cleanup_endpoint(cfg: Optional[dict[str, Any]] = None) -> AdapterEndpoint:
 
 def judge_model_name(cfg: Optional[dict[str, Any]] = None) -> str:
     c = cfg or load_eval_config()
-    return str(c.get("judge", {}).get("model", "qwen2.5:3b-instruct"))
+    return str(c.get("judge", {}).get("model", "llama3.1:8b"))
 
 
 def judge_base_url(cfg: Optional[dict[str, Any]] = None) -> str:
