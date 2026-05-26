@@ -1,4 +1,5 @@
 @echo off
+title voice dictation
 REM Resolve venv: CHEEAPPS_VENV, else .voice_dictation_venv, else .venv in this folder (same as gauth launch.bat).
 set "CHEE_CAPTURE=%CHEEAPPS_VENV%"
 setlocal EnableDelayedExpansion EnableExtensions
