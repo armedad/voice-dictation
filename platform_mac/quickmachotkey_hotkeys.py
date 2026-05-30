@@ -51,8 +51,11 @@ class QuickMachHotkeyController:
         # endregion
 
     def run_event_loop(self) -> None:
-        # installInterrupt=True: SIGINT must reach the run loop via MachSignals; otherwise
-        # Ctrl+C is deferred while blocked in NSApplicationMain (no Python bytecode).
+        # ``runEventLoop(installInterrupt=True)`` only calls ``installMachInterrupt()`` when
+        # ``NSApp()`` is still None. ``initialize()`` already created ``NSApplication``, so
+        # install explicitly—otherwise Ctrl+C never gets the Mach → CFRunLoop path.
+        AppHelper.installMachInterrupt()
+        # installInterrupt=True: keep PyObjC’s full path when NSApp is created inside runEventLoop.
         AppHelper.runEventLoop(installInterrupt=True)
 
     def set_hotkeys(

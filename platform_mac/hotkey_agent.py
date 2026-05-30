@@ -144,7 +144,9 @@ def main() -> None:
         if callable(prev):
             prev(signum, _frame)
 
-    for sig in (signal.SIGINT, signal.SIGTERM):
+    # SIGINT: leave default + ``QuickMachHotkeyController``’s ``installMachInterrupt`` (no debug
+    # wrapper—chaining to KeyboardInterrupt fights the Mach path). Debug-wrap SIGTERM only.
+    for sig in (signal.SIGTERM,):
         prev_sig_handlers[sig] = signal.getsignal(sig)
         # region agent log
         _debug_emit(

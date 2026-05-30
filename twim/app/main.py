@@ -29,12 +29,14 @@ from app.routers import (
     providers,
     settings,
 )
+from app.services import users
 from core.debug_flags_logging import log_system
 
 # Directories
 PROJECT_DIR = Path(__file__).parent.parent
-USERS_DIR = PROJECT_DIR / "users"
-LOGS_DIR = PROJECT_DIR / "logs"
+USERS_DIR = users.USERS_DIR
+_override_logs = os.environ.get("TWIM_LOGS_DIR")
+LOGS_DIR = Path(_override_logs) if _override_logs else PROJECT_DIR / "logs"
 
 
 def print_startup_banner():
@@ -57,8 +59,9 @@ def print_startup_banner():
 USERS_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Print startup banner
-print_startup_banner()
+# Print startup banner (skip in tests via TWIM_QUIET_STARTUP)
+if not os.environ.get("TWIM_QUIET_STARTUP"):
+    print_startup_banner()
 
 app = FastAPI(
     title="twim",

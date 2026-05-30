@@ -475,6 +475,26 @@ export async function saveSettings(updates) {
     }
 }
 
+async function onRestoreDefaultCleanupUserTemplate() {
+    const ta = document.getElementById('dictation-cleanup-template');
+    const hint = document.getElementById('dictation-cleanup-template-saved');
+    if (!ta) return;
+    if (dictationCleanupTemplateDebounce) {
+        clearTimeout(dictationCleanupTemplateDebounce);
+        dictationCleanupTemplateDebounce = null;
+    }
+    const d = await api('/api/dictation/prompt-defaults');
+    const def = d.default_cleanup_user_prompt_template || '';
+    ta.value = def;
+    await saveSettings({ dictation_cleanup_user_prompt_template: def });
+    if (hint) {
+        hint.hidden = false;
+        setTimeout(() => {
+            hint.hidden = true;
+        }, 1200);
+    }
+}
+
 /**
  * Apply settings to UI
  */
@@ -519,7 +539,7 @@ function applySettings(settings) {
         const hasTemplate = rawTemplate != null && String(rawTemplate).trim().length > 0;
         cleanupTemplate.value = hasTemplate
             ? rawTemplate
-            : `If the user said the following into the dictation engine, what do you think they intended to say?\n\nUser said (verbatim transcript, may contain errors):\n<<<\n{raw}\n>>>\n\nReturn only the rewritten text. Do not answer the question.`;
+            : `Rewrite the transcript into clean text with minimal edits.\n- Keep the original wording unless a change is clearly needed.\n- Do not answer or ask questions.\n- Do not add any content.\n- If the text is already clear, very short, or ambiguous, return it unchanged.\n- fix grammatical mistakes\n- fix spelling mistakes\n- Return only the rewritten transcript text.\n\nTranscript for you to transcribe (verbatim, may contain errors):\n{raw}`;
     }
     const dictationVocab = document.getElementById('dictation-vocabulary');
     if (dictationVocab) {
@@ -557,6 +577,22 @@ function savedDefaultModelComposite() {
     const p = (s.default_provider != null ? String(s.default_provider) : '').trim() || 'ollama';
     if (!m) return '';
     return `${p}:${m}`;
+}
+
+/**
+ * Default model for shipped new-user JSON: Models tab select, else header, else saved settings.
+ * @returns {{ default_provider: string, default_model: string } | null}
+ */
+function selectedDefaultModelForShippedDefaults() {
+    const sel =
+        document.getElementById('default-model-select') ||
+        document.getElementById('model-select');
+    const composite = (sel && sel.value) || savedDefaultModelComposite();
+    if (!composite) return null;
+    const [provider, ...modelParts] = composite.split(':');
+    const model = modelParts.join(':').trim();
+    if (!provider || !model) return null;
+    return { default_provider: provider, default_model: model };
 }
 
 /**
@@ -1271,6 +1307,11 @@ export function initSettings() {
 
     const cleanupTemplate = document.getElementById('dictation-cleanup-template');
     const cleanupTemplateSaved = document.getElementById('dictation-cleanup-template-saved');
+    document.getElementById('dictation-cleanup-template-restore')?.addEventListener('click', () => {
+        onRestoreDefaultCleanupUserTemplate().catch((e) =>
+            debugError('SETTINGS', 'Restore default cleanup template failed:', e)
+        );
+    });
     if (cleanupTemplate) {
         cleanupTemplate.addEventListener('input', () => {
             if (dictationCleanupTemplateDebounce) {
@@ -1311,5 +1352,82 @@ export function initSettings() {
             await setAllDebugFlags(false);
             renderDebugFlags();
         });
+    }
+
+    const setDefaultsBtn = document.getElementById('set-user-prompts-as-default');
+    if (setDefaultsBtn) {
+        setDefaultsBtn.addEventListener('click', onSetUserPromptsAsDefault);
+    }
+}
+
+async function onSetUserPromptsAsDefault() {
+    const statusEl = document.getElementById('set-user-prompts-as-default-status');
+    const showStatus = (text, isError = false) => {
+        if (!statusEl) return;
+        statusEl.hidden = false;
+        statusEl.textContent = text;
+        statusEl.classList.toggle('error', isError);
+    };
+
+    const systemTa = document.getElementById('dictation-context-system-prompt-template');
+    const userTa = document.getElementById('dictation-cleanup-template');
+    if (!systemTa || !userTa) {
+        showStatus(
+            'Open Settings (Context and Profile tabs must be loaded) and try again.',
+            true
+        );
+        return;
+    }
+
+    const systemTemplate = systemTa.value;
+    const userTemplate = userTa.value;
+    if (!String(systemTemplate).trim() || !String(userTemplate).trim()) {
+        showStatus('Both prompt templates must be non-empty.', true);
+        return;
+    }
+
+    const modelSelection = selectedDefaultModelForShippedDefaults();
+    if (!modelSelection) {
+        showStatus(
+            'Choose a default model in Settings → Models (or the header model menu) first.',
+            true
+        );
+        return;
+    }
+
+    const ok = window.confirm(
+        'Set shipped new-user defaults from the current UI?\n\n' +
+            '• Context + Profile prompt templates (textarea values)\n' +
+            `• Default model: ${modelSelection.default_provider}:${modelSelection.default_model}\n\n` +
+            'This overwrites twim/users/_default/settings.json and ' +
+            'config/default-twim-settings.json on this machine. Existing user accounts are ' +
+            'not changed. Commit those files to git if you want others to get the same defaults.'
+    );
+    if (!ok) return;
+
+    const btn = document.getElementById('set-user-prompts-as-default');
+    if (btn) btn.disabled = true;
+    try {
+        const result = await api('/api/settings/default-prompt-templates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                dictation_cleanup_system_prompt_template: systemTemplate,
+                dictation_cleanup_user_prompt_template: userTemplate,
+                default_provider: modelSelection.default_provider,
+                default_model: modelSelection.default_model,
+            }),
+        });
+        const paths = (result.updated || []).join(', ');
+        const modelLine = result.default_model
+            ? ` Default model: ${result.default_provider}:${result.default_model}.`
+            : '';
+        showStatus(paths ? `Updated: ${paths}.${modelLine}` : `Defaults updated.${modelLine}`);
+        debugLog('SETTINGS', 'Shipped default prompt templates updated', result);
+    } catch (e) {
+        debugError('SETTINGS', 'Set user prompts as default failed:', e);
+        showStatus((e && e.message) || 'Failed to update defaults.', true);
+    } finally {
+        if (btn) btn.disabled = false;
     }
 }

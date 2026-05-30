@@ -304,12 +304,9 @@ async def _execute_dictation_from_text(
     source: str,
 ) -> dict[str, Any]:
     """Run cleanup-only pipeline from a provided transcript (no mic)."""
+    from app.services.dictation_cleanup_prompts import build_dictation_cleanup_prompts
     from core.config import load_config
-    from core.models import (
-        format_dictation_cleanup_user_message_with_template,
-        format_vocabulary_for_whisper_initial_prompt,
-        render_dictation_cleanup_system_prompt,
-    )
+    from core.models import format_vocabulary_for_whisper_initial_prompt
     from core.orchestrator import run_pipeline
 
     settings = store.get_settings()
@@ -331,11 +328,9 @@ async def _execute_dictation_from_text(
 
     cleanup_system_prompt = None
     if llm_cleanup:
-        cleanup_system_prompt = render_dictation_cleanup_system_prompt(
-            settings.dictation_cleanup_system_prompt_template,
-            vocabulary=settings.dictation_vocabulary,
-            user_instructions=settings.dictation_instructions,
-        )
+        cleanup_system_prompt = build_dictation_cleanup_prompts(
+            settings, ""
+        ).system_prompt
 
     stt_vocab_hint = format_vocabulary_for_whisper_initial_prompt(
         settings.dictation_vocabulary
@@ -365,9 +360,7 @@ async def _execute_dictation_from_text(
         return {"ok": True, "cancelled": False, "text": "", "skipped_empty": True}
 
     cleanup_user_prompt = (
-        format_dictation_cleanup_user_message_with_template(
-            raw_transcript, settings.dictation_cleanup_user_prompt_template
-        )
+        build_dictation_cleanup_prompts(settings, raw_transcript).user_prompt_for_transcript
         if llm_cleanup
         else ""
     )
@@ -421,19 +414,20 @@ async def _execute_dictation_from_text(
 
 @router.get("/dictation/prompt-defaults")
 async def dictation_prompt_defaults(request: Request) -> dict[str, str]:
-    """Built-in dictation cleanup prompts (Context tab restore / defaults)."""
+    """Shipped new-user dictation cleanup templates (Profile / Context restore defaults)."""
     if not request.cookies.get("twim_session"):
         raise HTTPException(status_code=401, detail="Not logged in")
-    from core.models import (
-        DEFAULT_CLEANUP_SYSTEM_PROMPT,
-        DEFAULT_CLEANUP_SYSTEM_PROMPT_TEMPLATE,
-    )
+    from app.services.storage import get_default_settings
+    from core.models import DEFAULT_CLEANUP_SYSTEM_PROMPT
+
+    defaults = get_default_settings()
+    system_tmpl = (defaults.dictation_cleanup_system_prompt_template or "").strip()
+    user_tmpl = (defaults.dictation_cleanup_user_prompt_template or "").strip()
 
     return {
         "default_cleanup_base_prompt": DEFAULT_CLEANUP_SYSTEM_PROMPT.strip(),
-        "default_cleanup_system_prompt_template": (
-            DEFAULT_CLEANUP_SYSTEM_PROMPT_TEMPLATE.strip()
-        ),
+        "default_cleanup_system_prompt_template": system_tmpl,
+        "default_cleanup_user_prompt_template": user_tmpl,
     }
 
 
@@ -607,12 +601,9 @@ async def _execute_dictation(
             detail="Dictation + synthetic typing is only wired for macOS and Windows in this build.",
         )
 
+    from app.services.dictation_cleanup_prompts import build_dictation_cleanup_prompts
     from core.config import load_config
-    from core.models import (
-        format_dictation_cleanup_user_message_with_template,
-        format_vocabulary_for_whisper_initial_prompt,
-        render_dictation_cleanup_system_prompt,
-    )
+    from core.models import format_vocabulary_for_whisper_initial_prompt
     from core.orchestrator import run_pipeline
 
     settings = store.get_settings()
@@ -635,11 +626,9 @@ async def _execute_dictation(
 
     cleanup_system_prompt = None
     if llm_cleanup:
-        cleanup_system_prompt = render_dictation_cleanup_system_prompt(
-            settings.dictation_cleanup_system_prompt_template,
-            vocabulary=settings.dictation_vocabulary,
-            user_instructions=settings.dictation_instructions,
-        )
+        cleanup_system_prompt = build_dictation_cleanup_prompts(
+            settings, ""
+        ).system_prompt
 
     stt_vocab_hint = format_vocabulary_for_whisper_initial_prompt(
         settings.dictation_vocabulary
@@ -721,9 +710,11 @@ async def _execute_dictation(
                 cleanup_system_prompt=cleanup_system_prompt,
                 cleanup_user_prompt=None,
                 cleanup_user_prompt_builder=(
-                    (lambda raw: format_dictation_cleanup_user_message_with_template(
-                        raw, settings.dictation_cleanup_user_prompt_template
-                    ))
+                    (
+                        lambda raw: build_dictation_cleanup_prompts(
+                            settings, raw
+                        ).user_prompt_for_transcript
+                    )
                     if llm_cleanup
                     else None
                 ),
@@ -746,9 +737,9 @@ async def _execute_dictation(
             raw_tr = (capture_audit.get("raw_transcript") or "").strip()
             cup_empty = ""
             if llm_cleanup and raw_tr:
-                cup_empty = format_dictation_cleanup_user_message_with_template(
-                    raw_tr, settings.dictation_cleanup_user_prompt_template
-                )
+                cup_empty = build_dictation_cleanup_prompts(
+                    settings, raw_tr
+                ).user_prompt_for_transcript
             empty_snapshot = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "system_prompt_full": cleanup_system_prompt or "",
@@ -777,9 +768,7 @@ async def _execute_dictation(
 
         raw_tr = capture_audit.get("raw_transcript", "")
         cleanup_user_prompt = (
-            format_dictation_cleanup_user_message_with_template(
-                raw_tr, settings.dictation_cleanup_user_prompt_template
-            )
+            build_dictation_cleanup_prompts(settings, raw_tr).user_prompt_for_transcript
             if llm_cleanup
             else ""
         )

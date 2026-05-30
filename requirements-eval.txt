@@ -1,0 +1,6 @@
+# AI evals (STT WER + cleanup GEval). Install agent deps first:
+#   pip install -r requirements-agent.txt && pip install -r requirements-eval.txt
+-r requirements-agent.txt
+deepeval>=2.0
+jiwer>=3.0
+ollama>=0.4.0

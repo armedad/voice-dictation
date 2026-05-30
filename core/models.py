@@ -33,25 +33,32 @@ class VoiceDictationConfig(BaseModel):
 
 
 DEFAULT_CLEANUP_SYSTEM_PROMPT = (
-    "You rewrite spoken dictation into clear written text. Capture the user's intent, "
-    "not their literal words: tighten phrasing, remove filler and false starts, and "
-    "keep the substance. Preserve important names, numbers, and technical terms when "
-    "they matter. Do not answer questions or add new information. If the transcript is "
-    "a question, preserve it as a question. Output plain text only: no quotes, no "
-    "markdown, no preamble or commentary."
+    "You rewrite spoken dictation into clear written text. Rewrite only what was said; "
+    "do not act as an assistant. Preserve meaning, names, numbers, and technical terms. "
+    "Remove filler and false starts only when they are clearly disfluencies. "
+    "If input is already clear, return it unchanged. "
+    "If input is very short or ambiguous, return it unchanged. "
+    "Never ask follow-up questions. "
+    "Output plain text only: no quotes, no markdown, no preamble."
 )
 
 DICTATION_CLEANUP_GUARDRAILS = (
-    "Guardrails (critical): You are rewriting the transcript only. Do not answer "
-    "questions, add facts, or respond as an assistant. If the transcript is a question, "
-    "keep it as a question."
+    "Guardrails (critical): Rewrite only the transcript. Do not answer questions, "
+    "ask questions, add facts, or invent intent."
 )
 
 DICTATION_CLEANUP_USER_TEMPLATE = (
-    "If the user said the following into the dictation engine, what do you think they "
-    "intended to say? Rewrite it as clean text only; do not answer the question.\n\n"
-    "User said (verbatim transcript, may contain errors):\n<<<\n{raw}\n>>>\n\n"
-    "Return only the rewritten text."
+    "Rewrite the transcript into clean text with minimal edits.\n"
+    "- Keep the original wording unless a change is clearly needed.\n"
+    "- Do not answer or ask questions.\n"
+    "- Do not add any content.\n"
+    "- If the text is already clear, very short, or ambiguous, return it unchanged.\n"
+    "- fix grammatical mistakes\n"
+    "- fix spelling mistakes\n"
+    "- Return only the rewritten transcript text.\n"
+    "\n"
+    "Transcript for you to transcribe (verbatim, may contain errors):\n"
+    "{raw}"
 )
 
 # Full cleanup system message layout. Use .replace only (not str.format) so prose braces stay safe.
