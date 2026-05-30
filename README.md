@@ -78,7 +78,7 @@ Local **STT** (WER via [jiwer](https://github.com/j-hyphen/jiwer)) and **cleanup
 
 **Agents:** [`AGENTS.md`](AGENTS.md) (run commands, log paths). **Humans / detailed how-to:** [`adding-tests.md`](adding-tests.md).
 
-**One-shot install** (venv via `CHEEAPPS_VENV`, pytest, deepeval, jiwer, Whisper weights, `ollama pull` for eval models). Uses the same virtualenv convention as [`install.sh`](install.sh) (path saved in `.voice_dictation_venv`). Does **not** start `ollama serve` — use the Ollama app or an existing server on port 11434.
+**One-shot install** (venv via `CHEEAPPS_VENV`, **Python 3.12** — see [`CHEEAPPS.md`](CHEEAPPS.md), pytest, deepeval, jiwer, Whisper weights, `ollama pull` for eval models). Uses the same virtualenv convention as [`install.sh`](install.sh) (path saved in `.voice_dictation_venv`). Does **not** start `ollama serve` — use the Ollama app or an existing server on port 11434.
 
 ```bash
 cd "coding/voice-dictation-mvp"

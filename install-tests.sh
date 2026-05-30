@@ -26,6 +26,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
+# shellcheck source=scripts/cheeapps_python.sh
+source "$ROOT/scripts/cheeapps_python.sh"
 
 SKIP_OLLAMA=false
 SKIP_WHISPER=false
@@ -77,27 +79,10 @@ printf '%s\n' "$VENV_DIR" >"$ROOT/.voice_dictation_venv"
 
 echo "==> Voice dictation test harness install (root: $ROOT)"
 
-if command -v python3.13 >/dev/null 2>&1; then
-  PY=python3.13
-elif command -v python3.12 >/dev/null 2>&1; then
-  PY=python3.12
-elif command -v python3.11 >/dev/null 2>&1; then
-  PY=python3.11
-else
-  PY=python3
-fi
-
-if ! command -v "$PY" >/dev/null 2>&1; then
-  echo "error: need python3 (3.10+; prefers python3.13, then 3.12, then 3.11) on PATH" >&2
-  exit 1
-fi
-
+cheeapps_resolve_python
+PY="$CHEEAPPS_PY"
 VER="$("$PY" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 echo "==> Using $PY (Python $VER)"
-
-if ! "$PY" -c 'import sys; exit(0 if sys.version_info >= (3, 10) else 1)'; then
-  echo "warning: Python < 3.10 may hit typing issues; 3.11+ recommended." >&2
-fi
 
 if [[ "$(uname -s)" == "Darwin" ]] && command -v brew >/dev/null 2>&1; then
   if ! brew list portaudio >/dev/null 2>&1; then
@@ -122,6 +107,7 @@ fi
 
 if [[ -d "$VENV_DIR" ]] && [[ -f "$VENV_DIR/pyvenv.cfg" ]]; then
   echo "==> Using existing virtual environment."
+  cheeapps_warn_venv_python "$VENV_DIR"
 elif [[ -e "$VENV_DIR" ]]; then
   echo "error: $VENV_DIR exists but is not a Python venv (missing pyvenv.cfg)." >&2
   exit 1
