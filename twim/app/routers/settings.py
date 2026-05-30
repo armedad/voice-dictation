@@ -216,6 +216,12 @@ async def update_settings(request: Request, req: UpdateSettingsRequest):
             store.ensure_hotkey_secret()
 
     settings = store.update_settings_patch(patch)
+    if store.username:
+        from app.services.dictation_runtime_cache import (
+            schedule_dictation_runtime_cache_refresh,
+        )
+
+        schedule_dictation_runtime_cache_refresh(store.username)
     _sync_hotkey_agent_target_user(store, patch)
     if "dictation_hotkey_toggle" in patch or "dictation_hotkey_cancel" in patch:
         await _notify_hotkey_sidecar_reload(store.username or "")

@@ -25,7 +25,11 @@ from app.services.dictation_cleanup import (
 )
 from app.services.storage import Settings, UserDataStore, USERS_DIR
 from app.services.dictation_events import publish_event
-from core.debug_flags_logging import log_debug, log_system
+from app.services.dictation_runtime_cache import (
+    DictationRuntimePrep,
+    get_dictation_runtime_prep,
+)
+from core.debug_flags_logging import is_flag_enabled_for_user, log_debug, log_system
 
 
 def _debug_emit(location: str, message: str, data: dict[str, Any]) -> None:
@@ -90,14 +94,21 @@ def _probe_hotkey_agent_via_ping(session_user: str) -> tuple[str, dict[str, Any]
 _dictation_cancel = threading.Event()
 _dictation_stop = threading.Event()
 _dictation_session_lock = asyncio.Lock()
+_dictation_start_guard = asyncio.Lock()
 _dictation_active = False
+_dictation_stop_set_perf: float | None = None
+_dictation_cancel_set_perf: float | None = None
 
 
 def _set_dictation_cancel() -> None:
+    global _dictation_cancel_set_perf
+    _dictation_cancel_set_perf = time.perf_counter()
     _dictation_cancel.set()
 
 
 def _set_dictation_stop() -> None:
+    global _dictation_stop_set_perf
+    _dictation_stop_set_perf = time.perf_counter()
     _dictation_stop.set()
 
 
@@ -587,8 +598,10 @@ async def _execute_dictation(
     *,
     cancel_event: threading.Event,
     source: str = "dictation",
+    prep: DictationRuntimePrep | None = None,
 ) -> dict[str, Any]:
     """Shared dictation pipeline: record → STT/cleanup → type. Respects ``cancel_event``."""
+    t_pipeline_0 = time.perf_counter()
     if sys.platform == "darwin":
         from platform_mac.audio import record_wav_bytes_interruptible
         from platform_mac.typing_inject import TypingInjectionError, type_text_strict
@@ -602,38 +615,46 @@ async def _execute_dictation(
         )
 
     from app.services.dictation_cleanup_prompts import build_dictation_cleanup_prompts
-    from core.config import load_config
-    from core.models import format_vocabulary_for_whisper_initial_prompt
     from core.orchestrator import run_pipeline
 
-    settings = store.get_settings()
-    sd_device = _resolve_sounddevice_input_index(settings)
-    llm_cleanup, gate_code = _dictation_cleanup_gate(
-        settings, user_for_log=store.username or ""
+    t_record_0 = time.perf_counter()
+    publish_event(store.username, "dictation_start", {"source": source})
+    _maybe_dictation_ui_sound("start")
+    cancel_event.clear()
+    _dictation_stop.clear()
+    global _dictation_stop_set_perf, _dictation_cancel_set_perf
+    _dictation_stop_set_perf = None
+    _dictation_cancel_set_perf = None
+
+    t_prep_0 = time.perf_counter()
+    prep_from_cache = prep is not None
+    if prep is None:
+        prep = await get_dictation_runtime_prep(store)
+    if prep.prep_error:
+        raise HTTPException(status_code=400, detail=prep.prep_error)
+
+    settings = prep.settings
+    sd_device = prep.sd_device
+    llm_cleanup = prep.llm_cleanup
+    gate_code = prep.gate_code
+    clean_ep = prep.clean_ep
+    openai_key = prep.openai_key
+    trans_ep = prep.trans_ep
+    cleanup_system_prompt = prep.cleanup_system_prompt
+    stt_vocab_hint = prep.stt_vocab_hint
+
+    if is_flag_enabled_for_user(store.username or "", "DICTATION"):
+        _dictation_cleanup_gate_trace(store, source, settings, llm_cleanup, gate_code)
+
+    _dictation_server_log(
+        "dictation timing: prep ready",
+        {
+            "source": source,
+            "user": store.username,
+            "prep_ms": int((time.perf_counter() - t_prep_0) * 1000),
+            "cached": prep_from_cache,
+        },
     )
-    _dictation_cleanup_gate_trace(store, source, settings, llm_cleanup, gate_code)
-
-    clean_ep = None
-    openai_key = None
-    if llm_cleanup:
-        try:
-            clean_ep, openai_key = build_cleanup_endpoint(settings, store.data_dir)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-
-    cfg = load_config()
-    trans_ep = resolve_transcription_endpoint(settings.speech_model, cfg)
-
-    cleanup_system_prompt = None
-    if llm_cleanup:
-        cleanup_system_prompt = build_dictation_cleanup_prompts(
-            settings, ""
-        ).system_prompt
-
-    stt_vocab_hint = format_vocabulary_for_whisper_initial_prompt(
-        settings.dictation_vocabulary
-    )
-
     _debug_emit(
         "app/routers/dictation.py:_execute_dictation",
         "record start enter",
@@ -643,21 +664,42 @@ async def _execute_dictation(
         "dictation record start",
         {"source": source, "user": store.username, "seconds": RECORD_SECONDS},
     )
-    publish_event(store.username, "dictation_start", {"source": source})
-    _maybe_dictation_ui_sound("start")
-    cancel_event.clear()
-    _dictation_stop.clear()
     log_system(level="INFO", message="start dictating", data={"source": source, "user": store.username})
     console_stop = asyncio.Event()
     hb_task = asyncio.create_task(_dictation_console_heartbeat(console_stop))
     try:
         try:
+            t_to_thread_0 = time.perf_counter()
             wav, cancelled, stopped = await asyncio.to_thread(
                 record_wav_bytes_interruptible,
                 None,
                 cancel_event,
                 stop_event=_dictation_stop,
                 device=sd_device,
+            )
+            t_to_thread_1 = time.perf_counter()
+            _dictation_server_log(
+                "dictation timing: mic capture returned",
+                {
+                    "source": source,
+                    "user": store.username,
+                    "to_thread_ms": int((t_to_thread_1 - t_to_thread_0) * 1000),
+                    "from_record_start_ms": int((t_to_thread_1 - t_record_0) * 1000),
+                    "stop_set_ms_before_return": (
+                        int((t_to_thread_1 - _dictation_stop_set_perf) * 1000)
+                        if _dictation_stop_set_perf is not None
+                        else None
+                    ),
+                    "cancel_set_ms_before_return": (
+                        int((t_to_thread_1 - _dictation_cancel_set_perf) * 1000)
+                        if _dictation_cancel_set_perf is not None
+                        else None
+                    ),
+                    "wav_bytes": len(wav) if isinstance(wav, (bytes, bytearray)) else None,
+                    "cancelled": bool(cancelled),
+                    "stopped": bool(stopped),
+                    "device_index": sd_device,
+                },
             )
         except Exception as e:
             hint = (
@@ -701,6 +743,7 @@ async def _execute_dictation(
 
         capture_audit: dict[str, Any] = {}
         try:
+            t_stt_0 = time.perf_counter()
             text = await run_pipeline(
                 wav,
                 "dictation.wav",
@@ -723,6 +766,16 @@ async def _execute_dictation(
                 capture_audit=capture_audit,
                 cleanup_debug_log=_dictation_cleanup_debug_logger(store, source),
                 cleanup_skip_gate_code=(gate_code if not llm_cleanup else None),
+            )
+            t_stt_1 = time.perf_counter()
+            _dictation_server_log(
+                "dictation timing: pipeline returned",
+                {
+                    "source": source,
+                    "user": store.username,
+                    "pipeline_ms": int((t_stt_1 - t_stt_0) * 1000),
+                    "since_hotkey_start_ms": int((t_stt_1 - t_pipeline_0) * 1000),
+                },
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
@@ -796,7 +849,17 @@ async def _execute_dictation(
             {"source": source, "user": store.username, "text_len": len(text_out)},
         )
         try:
+            t_type_0 = time.perf_counter()
             await asyncio.to_thread(type_text_strict, text_out)
+            t_type_1 = time.perf_counter()
+            _dictation_server_log(
+                "dictation timing: typed",
+                {
+                    "source": source,
+                    "user": store.username,
+                    "type_ms": int((t_type_1 - t_type_0) * 1000),
+                },
+            )
         except TypingInjectionError as e:
             _dictation_server_log(
                 "dictation typing failed",
@@ -1013,6 +1076,32 @@ async def dictation_hotkey_cancel(request: Request) -> dict[str, Any]:
     return {"ok": True}
 
 
+async def _hotkey_dictation_background(store: UserDataStore) -> None:
+    """Run full dictation session without blocking the hotkey HTTP response."""
+    global _dictation_active
+    try:
+        async with _dictation_session_lock:
+            prep = await get_dictation_runtime_prep(store)
+            await _execute_dictation(
+                store,
+                cancel_event=_dictation_cancel,
+                source="hotkey_toggle",
+                prep=prep,
+            )
+    except HTTPException as e:
+        _dictation_server_log(
+            "dictation hotkey session failed",
+            {"user": store.username, "status": e.status_code, "detail": e.detail},
+        )
+    except Exception as e:
+        _dictation_server_log(
+            "dictation hotkey session failed",
+            {"user": store.username, "error": str(e)[:400]},
+        )
+    finally:
+        _dictation_active = False
+
+
 @router.post("/dictation/hotkey/toggle")
 async def dictation_hotkey_toggle(
     request: Request,
@@ -1042,6 +1131,7 @@ async def dictation_hotkey_toggle(
     if not settings.dictation_hotkey_toggle:
         raise HTTPException(status_code=400, detail="No dictation toggle hotkey configured")
 
+    t_req_0 = time.perf_counter()
     _debug_emit(
         "app/routers/dictation.py:hotkey_toggle",
         "hotkey toggle entry",
@@ -1053,38 +1143,29 @@ async def dictation_hotkey_toggle(
     )
     if _dictation_active:
         _dictation_server_log("dictation hotkey toggle -> stop active session", {"user": body.username})
+        _dictation_server_log(
+            "dictation timing: stop requested",
+            {"user": body.username, "source": "hotkey_toggle"},
+        )
         _set_dictation_stop()
         publish_event(store.username, "dictation_stop", {"source": "hotkey_toggle"})
         # End chime: played when the in-flight _execute_dictation hits dictation_done.
         return {"ok": True, "stopped": True}
-    lock_start = time.time()
-    async with _dictation_session_lock:
-        _debug_emit(
-            "app/routers/dictation.py:hotkey_toggle",
-            "hotkey toggle lock acquired",
-            {"wait_ms": int((time.time() - lock_start) * 1000), "user": body.username},
-        )
+
+    async with _dictation_start_guard:
+        if _dictation_active:
+            _set_dictation_stop()
+            publish_event(store.username, "dictation_stop", {"source": "hotkey_toggle"})
+            return {"ok": True, "stopped": True}
         _dictation_active = True
-        try:
-            out = await _execute_dictation(
-                store, cancel_event=_dictation_cancel, source="hotkey_toggle"
-            )
-        finally:
-            _dictation_active = False
-    if out.get("cancelled"):
-        _dictation_server_log(
-            "dictation hotkey toggle finished cancelled",
-            {"user": body.username},
-        )
-        return {"ok": False, "cancelled": True, "text": ""}
-    if out.get("skipped_empty"):
-        _dictation_server_log(
-            "dictation hotkey toggle finished empty transcript",
-            {"user": body.username},
-        )
-        return {"ok": True, "text": "", "skipped_empty": True}
+
     _dictation_server_log(
-        "dictation hotkey toggle finished ok",
-        {"user": body.username},
+        "dictation timing: hotkey start scheduled",
+        {
+            "user": body.username,
+            "source": "hotkey_toggle",
+            "since_accept_ms": int((time.perf_counter() - t_req_0) * 1000),
+        },
     )
-    return {"ok": True, "text": out.get("text", "")}
+    asyncio.create_task(_hotkey_dictation_background(store))
+    return {"ok": True, "started": True}
