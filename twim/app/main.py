@@ -1,5 +1,6 @@
 """FastAPI application for twim (voice dictation settings + API)."""
 from __future__ import annotations
+import asyncio
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -68,6 +69,16 @@ app = FastAPI(
     description="Voice dictation settings and cleanup API",
     version="0.1.0"
 )
+
+
+@app.on_event("startup")
+async def _warm_dictation_runtime_caches() -> None:
+    """Pre-build STT/cleanup endpoints per user so hotkey start stays off the critical path."""
+    if os.environ.get("TWIM_QUIET_STARTUP"):
+        return
+    from app.services.dictation_runtime_cache import warm_all_dictation_runtime_caches
+
+    asyncio.create_task(warm_all_dictation_runtime_caches())
 
 def _debug_emit(location: str, message: str, data: dict) -> None:
     log_system(level="INFO", message=message, data={"location": location, **data})

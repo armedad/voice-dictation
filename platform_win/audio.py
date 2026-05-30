@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import io
 import threading
+import time
 import wave
 
 import numpy as np
 import sounddevice as sd
 
+from core.debug_flags_logging import log_system
 
 def record_wav_bytes(duration_s: float, sample_rate: int = 16000) -> bytes:
     """Blocking capture from default input device; returns WAV bytes (mono int16)."""
@@ -43,6 +45,7 @@ def record_wav_bytes_interruptible(
     if not isinstance(cancel_event, threading.Event):
         raise TypeError("cancel_event must be threading.Event")
 
+    t0 = time.perf_counter()
     n_target = int(duration_s * sample_rate) if duration_s and duration_s > 0 else None
     block_frames = max(1, int(chunk_s * sample_rate))
     parts: list[np.ndarray] = []
@@ -57,7 +60,19 @@ def record_wav_bytes_interruptible(
     if device is not None:
         stream_kw["device"] = device
 
+    log_system(
+        level="INFO",
+        message="dictation timing: win audio open begin",
+        data={"device": device, "sample_rate": sample_rate, "block_frames": block_frames},
+    )
     with sd.InputStream(**stream_kw) as stream:
+        t_opened = time.perf_counter()
+        log_system(
+            level="INFO",
+            message="dictation timing: win audio open ok",
+            data={"opened_ms": int((t_opened - t0) * 1000), "device": device},
+        )
+        first_read_logged = False
         while n_target is None or n_read < n_target:
             if cancel_event.is_set():
                 return b"", True, False
@@ -67,6 +82,18 @@ def record_wav_bytes_interruptible(
             data, _overflowed = stream.read(need)
             if data is None or len(data) == 0:
                 continue
+            if not first_read_logged:
+                t_first = time.perf_counter()
+                first_read_logged = True
+                log_system(
+                    level="INFO",
+                    message="dictation timing: win audio first chunk",
+                    data={
+                        "first_chunk_ms": int((t_first - t0) * 1000),
+                        "need_frames": need,
+                        "device": device,
+                    },
+                )
             arr = np.asarray(data, dtype=np.float32)
             parts.append(np.squeeze(arr, axis=1))
             n_read += arr.shape[0]
@@ -76,6 +103,17 @@ def record_wav_bytes_interruptible(
     if not parts:
         return b"", stop_event is not None and stop_event.is_set(), stop_event is not None and stop_event.is_set()
 
+    t_done = time.perf_counter()
+    log_system(
+        level="INFO",
+        message="dictation timing: win audio capture done",
+        data={
+            "capture_ms": int((t_done - t0) * 1000),
+            "frames": int(n_read),
+            "device": device,
+            "stopped": bool(stop_event is not None and stop_event.is_set()),
+        },
+    )
     audio = np.concatenate(parts) if len(parts) > 1 else parts[0]
     audio_i16 = (audio * 32767.0).clip(-32768, 32767).astype(np.int16)
     buf = io.BytesIO()
