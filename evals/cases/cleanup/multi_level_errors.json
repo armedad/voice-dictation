@@ -1,0 +1,7 @@
+{
+  "id": "multi_level_errors",
+  "raw_transcript": "whts the capitol of frnce",
+  "expected_output": "What's the capital of France?",
+  "min_geval_score": 0.7,
+  "skip_geval": false
+}

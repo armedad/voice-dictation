@@ -1,0 +1,11 @@
+{
+  "id": "question_not_answered",
+  "raw_transcript": "um so like what is the capital of France",
+  "vocabulary": null,
+  "user_instructions": null,
+  "expected_contains": ["?"],
+  "expected_not_contains": ["paris"],
+  "min_geval_score": 0.5,
+  "skip_geval": true,
+  "geval_criteria_augment": "For this case: INPUT asks for the capital of France; OUTPUT must remain a question only and must not name Paris or any city as the answer."
+}

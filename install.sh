@@ -17,6 +17,8 @@
 #   ./install.sh --with-spike     # also install spike/ requirements (mac permission lab)
 #   ./install.sh --recreate-venv  # remove existing venv at CHEEAPPS_VENV path, then recreate
 #
+# Shared CHEEAPPS venv uses Python 3.12 (see CHEEAPPS.md).
+#
 # Env:
 #   CHEEAPPS_VENV                  virtualenv directory (required non-interactive; else prompted)
 # Env (optional, for Whisper preload):
@@ -26,6 +28,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
+# shellcheck source=scripts/cheeapps_python.sh
+source "$ROOT/scripts/cheeapps_python.sh"
 
 AGENT_ONLY=false
 SKIP_OLLAMA=false
@@ -86,27 +90,10 @@ printf '%s\n' "$VENV_DIR" >"$ROOT/.voice_dictation_venv"
 
 echo "==> Voice dictation MVP install (root: $ROOT)"
 
-if command -v python3.13 >/dev/null 2>&1; then
-  PY=python3.13
-elif command -v python3.12 >/dev/null 2>&1; then
-  PY=python3.12
-elif command -v python3.11 >/dev/null 2>&1; then
-  PY=python3.11
-else
-  PY=python3
-fi
-
-if ! command -v "$PY" >/dev/null 2>&1; then
-  echo "error: need python3 (3.10+; install.sh prefers python3.13, then 3.12, then 3.11) on PATH" >&2
-  exit 1
-fi
-
+cheeapps_resolve_python
+PY="$CHEEAPPS_PY"
 VER="$("$PY" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 echo "==> Using $PY (Python $VER)"
-
-if ! "$PY" -c 'import sys; exit(0 if sys.version_info >= (3, 10) else 1)'; then
-  echo "warning: Python < 3.10 may hit typing issues; 3.11+ recommended." >&2
-fi
 
 if [[ "$(uname -s)" == "Darwin" ]] && command -v brew >/dev/null 2>&1; then
   if ! brew list portaudio >/dev/null 2>&1; then
@@ -131,6 +118,7 @@ fi
 
 if [[ -d "$VENV_DIR" ]] && [[ -f "$VENV_DIR/pyvenv.cfg" ]]; then
   echo "==> Using existing virtual environment."
+  cheeapps_warn_venv_python "$VENV_DIR"
 elif [[ -e "$VENV_DIR" ]]; then
   echo "error: $VENV_DIR exists but is not a Python venv (missing pyvenv.cfg)." >&2
   exit 1
@@ -180,16 +168,26 @@ if [[ "$SKIP_WHISPER" != true ]]; then
 fi
 
 if [[ "$SKIP_OLLAMA" != true ]] && command -v ollama >/dev/null 2>&1; then
-  echo "==> Pulling Ollama cleanup model (from config/example-model-settings.json) ..."
+  echo "==> Ollama models (agent cleanup from example config + TWIM default cleanup + eval judge) ..."
   OLLAMA_MODEL="$(
     python "$ROOT/scripts/install_post_pip.py" print-ollama-cleanup-model
   )"
   if [[ -n "${OLLAMA_MODEL:-}" ]]; then
+    echo "==> Pulling ${OLLAMA_MODEL} (agent example config cleanup) ..."
     ollama pull "$OLLAMA_MODEL" || {
-      echo "warning: ollama pull failed (offline or model name wrong?). Fix cleanup.model in config and run: ollama pull <name>" >&2
+      echo "warning: ollama pull $OLLAMA_MODEL failed (offline or wrong name?)." >&2
     }
-  else
-    echo "==> Skipping ollama pull (cleanup.provider is not ollama_chat in example config)."
+  fi
+  PULL_LINES="$(python "$ROOT/scripts/install_post_pip.py" print-eval-ollama-models-to-pull || true)"
+  if [[ -n "${PULL_LINES//[$'\t\r\n ']/}" ]]; then
+    while IFS=$'\t' read -r role model || [[ -n "${role:-}${model:-}" ]]; do
+      [[ -z "${model:-}" ]] && continue
+      label="${role:-eval}"
+      echo "==> Pulling ${model} (${label}) ..."
+      ollama pull "$model" || {
+        echo "warning: ollama pull $model failed (offline or wrong name?)." >&2
+      }
+    done <<<"$PULL_LINES"
   fi
 elif [[ "$SKIP_OLLAMA" != true ]]; then
   echo "warning: ollama not on PATH; skipped model pull. Install from https://ollama.com" >&2

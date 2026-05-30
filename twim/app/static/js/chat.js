@@ -120,6 +120,40 @@ export function appendDictatedTextToChat(text) {
     addMessageToUI('user', t);
 }
 
+const MESSAGE_COPY_ICON_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/>
+  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+
+async function copyMessageText(text) {
+    const value = (text ?? '').toString();
+    if (!value.trim()) return;
+    try {
+        await navigator.clipboard.writeText(value);
+    } catch (e) {
+        debugError('CHAT', 'Clipboard copy failed:', e);
+    }
+}
+
+function createMessageCopyButton(contentDiv) {
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'message-copy-btn';
+    copyBtn.title = 'Copy';
+    copyBtn.setAttribute('aria-label', 'Copy message');
+    copyBtn.innerHTML = MESSAGE_COPY_ICON_SVG;
+    copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        copyMessageText(contentDiv.textContent);
+        const prev = copyBtn.title;
+        copyBtn.title = 'Copied';
+        window.setTimeout(() => {
+            copyBtn.title = prev;
+        }, 1500);
+    });
+    return copyBtn;
+}
+
 function addMessageToUI(role, content) {
     const messagesContainer = document.getElementById('messages');
     
@@ -131,6 +165,7 @@ function addMessageToUI(role, content) {
     contentDiv.textContent = content;
     
     messageDiv.appendChild(contentDiv);
+    messageDiv.appendChild(createMessageCopyButton(contentDiv));
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
     

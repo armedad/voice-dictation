@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from datetime import datetime
 import secrets
 from typing import Any, Optional, Mapping
 from uuid import uuid4
 from pydantic import BaseModel, Field
 
+from .time_utils import utc_now_iso_z
 from .users import USERS_DIR
 
 
@@ -82,10 +82,17 @@ def normalize_debug_flags(raw: Mapping[str, Any] | None) -> dict[str, bool]:
 
 
 DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE = (
-    "If the user said the following into the dictation engine, what do you think they "
-    "intended to say?\n\n"
-    "User said (verbatim transcript, may contain errors):\n<<<\n{raw}\n>>>\n\n"
-    "Return only the rewritten text. Do not answer the question."
+    "Rewrite the transcript into clean text with minimal edits.\n"
+    "- Keep the original wording unless a change is clearly needed.\n"
+    "- Do not answer or ask questions.\n"
+    "- Do not add any content.\n"
+    "- If the text is already clear, very short, or ambiguous, return it unchanged.\n"
+    "- fix grammatical mistakes\n"
+    "- fix spelling mistakes\n"
+    "- Return only the rewritten transcript text.\n"
+    "\n"
+    "Transcript for you to transcribe (verbatim, may contain errors):\n"
+    "{raw}"
 )
 
 
@@ -102,9 +109,28 @@ def normalize_url(url: str) -> str:
     return url
 
 
+def require_default_model(settings: Settings, *, source: str = "settings") -> None:
+    """
+    Require ``default_model`` from shipped/user settings — no hardcoded model fallback.
+
+    Raises:
+        ValueError: when ``default_model`` is missing or blank.
+    """
+    if (settings.default_model or "").strip():
+        return
+    raise ValueError(
+        f"default_model is not set in {source}. "
+        "Set default_model (and default_provider) in twim/users/_default/settings.json "
+        "and config/default-twim-settings.json for new users."
+    )
+
+
 def get_default_settings() -> Settings:
     """Load default settings from _default/settings.json if it exists."""
-    default_file = USERS_DIR / "_default" / "settings.json"
+    # Resolve at call time so tests (TWIM_USERS_DIR / monkeypatch) see the active users dir.
+    from . import users
+
+    default_file = users.USERS_DIR / "_default" / "settings.json"
     if default_file.exists():
         try:
             with open(default_file, "r", encoding="utf-8") as f:
@@ -119,13 +145,18 @@ def get_default_settings() -> Settings:
                 defaults.dictation_cleanup_system_prompt_template = (
                     _default_dictation_cleanup_system_prompt_template()
                 )
+            defaults.ollama_url = normalize_url(defaults.ollama_url)
+            require_default_model(
+                defaults, source=f"twim/users/_default/settings.json ({default_file})"
+            )
             return defaults
+        except ValueError:
+            raise
         except (json.JSONDecodeError, Exception):
             pass
-    return Settings(
-        dictation_cleanup_system_prompt_template=_default_dictation_cleanup_system_prompt_template(),
-        dictation_cleanup_user_prompt_template=DEFAULT_DICTATION_CLEANUP_USER_TEMPLATE,
-        debug_flags=dict(DEBUG_FLAG_DEFAULTS),
+    raise ValueError(
+        f"Missing or invalid shipped defaults at {default_file}. "
+        "Provide twim/users/_default/settings.json with default_model and default_provider."
     )
 
 
@@ -198,7 +229,7 @@ class UserDataStore:
                            model: Optional[str] = None) -> Conversation:
         """Create a new conversation."""
         self.ensure_dirs()
-        now = datetime.utcnow().isoformat() + "Z"
+        now = utc_now_iso_z()
         conversation = Conversation(
             id=str(uuid4()),
             title=title,
@@ -232,7 +263,7 @@ class UserDataStore:
             conversation.provider = provider
         if model is not None:
             conversation.model = model
-        conversation.updated_at = datetime.utcnow().isoformat() + "Z"
+        conversation.updated_at = utc_now_iso_z()
         self.save_conversation(conversation)
         return conversation
     
@@ -257,7 +288,7 @@ class UserDataStore:
             content=content,
             model=model,
             provider=provider,
-            timestamp=datetime.utcnow().isoformat() + "Z"
+            timestamp=utc_now_iso_z()
         )
         conversation.messages.append(message)
         conversation.updated_at = message.timestamp
@@ -274,7 +305,9 @@ class UserDataStore:
         defaults = get_default_settings()
         
         if not self.settings_file.exists():
-            # No user settings - use defaults
+            defaults.ollama_url = normalize_url(defaults.ollama_url)
+            defaults.lm_studio_url = normalize_url(defaults.lm_studio_url)
+            require_default_model(defaults, source="shipped default settings")
             return defaults
         
         # Load user settings
@@ -310,7 +343,8 @@ class UserDataStore:
         # Normalize URLs
         settings.ollama_url = normalize_url(settings.ollama_url)
         settings.lm_studio_url = normalize_url(settings.lm_studio_url)
-        
+        require_default_model(settings, source=f"user settings ({self.settings_file})")
+
         return settings
     
     def save_settings(self, settings: Settings):
@@ -467,7 +501,7 @@ class UserDataStore:
                         details: Optional[str] = None) -> Notification:
         """Add a notification and return it."""
         notifications = self.get_notifications()
-        now = datetime.utcnow().isoformat() + "Z"
+        now = utc_now_iso_z()
         notif = Notification(
             id=str(uuid4()),
             type=notif_type,

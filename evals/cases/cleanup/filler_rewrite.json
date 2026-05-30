@@ -1,0 +1,10 @@
+{
+  "id": "filler_rewrite",
+  "raw_transcript": "um so like I need to send the report to Sarah by end of day",
+  "user_instructions": null,
+  "expected_output": "I need to send the report to Sarah by end of day.",
+  "expected_contains": ["Sarah", "day"],
+  "expected_not_contains": ["```", "Here is", "Sure,"],
+  "min_geval_score": 0.5,
+  "skip_geval": false
+}

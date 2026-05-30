@@ -1,13 +1,16 @@
 """User management service."""
 import json
+import os
 from pathlib import Path
-from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
 
+from .time_utils import utc_now_iso_z
+
 # Users directory
 PROJECT_DIR = Path(__file__).parent.parent.parent
-USERS_DIR = PROJECT_DIR / "users"
+_override_users = os.environ.get("TWIM_USERS_DIR")
+USERS_DIR = Path(_override_users) if _override_users else PROJECT_DIR / "users"
 USERS_FILE = USERS_DIR / "users.json"
 
 
@@ -69,7 +72,7 @@ def create_user(username: str, password: str, display_name: str) -> Optional[Use
         username=username,
         password=password,
         display_name=display_name,
-        created_at=datetime.utcnow().isoformat() + "Z"
+        created_at=utc_now_iso_z()
     )
     
     config.users[username] = user
