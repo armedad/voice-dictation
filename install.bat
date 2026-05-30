@@ -66,16 +66,9 @@ if "%AGENT_ONLY%"=="1" (
 
 echo ==^> Voice dictation MVP install (root: %ROOT%^)
 
-python -c "import sys; raise SystemExit(0 if sys.version_info>=(3,10) else 1)" 2>nul
-if errorlevel 1 (
-  echo error: need Python 3.10+ on PATH ^(install from https://www.python.org/downloads/^)
-  exit /b 1
-)
-
-for /f "tokens=*" %%v in ('python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"') do set "PYVER=%%v"
-echo ==^> Using python on PATH (Python %PYVER%^)
-python -c "import sys; exit(0 if sys.version_info>=(3,10) else 1)" 2>nul
-if errorlevel 1 echo warning: Python ^< 3.10 may hit typing issues; 3.11+ recommended.
+call "%ROOT%\scripts\cheeapps_python.bat"
+if errorlevel 1 exit /b 1
+echo ==^> Using !CHEEAPPS_VENV_PY! for CHEEAPPS venv ^(Python 3.12^)
 
 if "!CHEE_CAPTURE!"=="" (
   if exist ".voice_dictation_venv" (
@@ -120,13 +113,10 @@ if exist "!VENV_DIR!\pyvenv.cfg" (
   echo error: directory exists but is not a Python venv ^(missing pyvenv.cfg^).
   exit /b 1
 ) else (
-  echo ==^> Creating virtual environment...
-  py -3.13 -m venv "!VENV_DIR!" 2>nul
-  if not exist "!VENV_DIR!\Scripts\python.exe" py -3.12 -m venv "!VENV_DIR!" 2>nul
-  if not exist "!VENV_DIR!\Scripts\python.exe" py -3.11 -m venv "!VENV_DIR!" 2>nul
-  if not exist "!VENV_DIR!\Scripts\python.exe" python -m venv "!VENV_DIR!"
+  echo ==^> Creating virtual environment with !CHEEAPPS_VENV_PY!...
+  !CHEEAPPS_VENV_PY! -m venv "!VENV_DIR!"
   if not exist "!VENV_DIR!\Scripts\python.exe" (
-    echo error: could not create venv at !VENV_DIR!. Try: py -3.13 -m venv "!VENV_DIR!"
+    echo error: could not create venv at !VENV_DIR!. Install Python 3.12 ^(py -3.12^).
     exit /b 1
   )
 )
