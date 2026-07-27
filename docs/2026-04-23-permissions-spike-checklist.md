@@ -18,7 +18,7 @@ pip install -r requirements.txt
 
 **System Settings → Privacy & Security**
 
-1. **Accessibility** — enable for the app running Python (Terminal / Cursor / iTerm). Required for synthetic **Cmd+V** in `paste` and `record`.
+1. **Accessibility** — enable for the app running Python (Terminal / IDE / iTerm). Required for synthetic **Cmd+V** in `paste` and `record`.
 2. **Input Monitoring** — enable for the same app. Required for **global hotkeys** with `pynput` in `hotkey` and `record`.
 3. **Microphone** — enable for the same app. Required for **`record`**.
 

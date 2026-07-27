@@ -7,7 +7,7 @@ if [ -z "$1" ]; then
     exit 1
 fi
 
-SOURCE_DIR="/Users/chee/zapier ai project/coding/voice-dictation-mvp/twim"
+SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
 GIT_REPO="/Volumes/apps/git/twim"
 
 # Sync files from source to git repo (excluding .git and user data)
