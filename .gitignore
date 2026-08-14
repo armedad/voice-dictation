@@ -12,12 +12,15 @@ __pycache__/
 dist/
 build/
 
-# Local runtime (twim)
+# Runtime / personal data (never commit)
+*.log
+*.txt
+/user/
+/users/
 twim/users/
 twim/logs/
-
-# Repo root (e.g. start.sh / ollama logs)
 logs/
+*.pid
 
 # Secrets / env
 .env

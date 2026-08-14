@@ -19,6 +19,10 @@ users/*
 users/_default/*
 !users/_default/settings.json
 
+# Runtime scratch files
+*.log
+*.txt
+
 # Logs
 logs/
 
