@@ -106,4 +106,4 @@ This skeleton is designed to be extended. Key extension points:
 
 ## License
 
-MIT
+Personal, non-commercial use is allowed. Credit is required. Modified versions need written permission. See [LICENSE](../LICENSE).
