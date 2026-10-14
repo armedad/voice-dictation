@@ -106,4 +106,4 @@ This skeleton is designed to be extended. Key extension points:
 
 ## License
 
-Personal, non-commercial use is allowed. Credit is required. Modified versions need written permission. See [LICENSE](../LICENSE).
+GNU General Public License v3.0. See [LICENSE](../LICENSE).
